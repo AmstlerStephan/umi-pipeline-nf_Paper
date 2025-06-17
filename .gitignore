@@ -1,7 +1,7 @@
 data/fastq
-other_pipelines/consequmi/out
-other_pipelines/karst/out
+pipelines/consequmi/out
+pipelines/karst/out
+pipelines/umi-pipeline-nf/out
 .nextflow*
 QC
-umi-pipeline-nf/out
 work
