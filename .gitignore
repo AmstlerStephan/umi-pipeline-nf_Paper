@@ -1,3 +1,7 @@
-data/
+data/fastq
 other_pipelines/consequmi/out
 other_pipelines/karst/out
+.nextflow*
+QC
+umi-pipeline-nf/out
+work

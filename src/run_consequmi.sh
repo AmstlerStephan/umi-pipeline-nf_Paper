@@ -31,4 +31,4 @@ create_output_dir(){
 
 create_output_dir
 process_umis
-create_consenus
+create_consensus
