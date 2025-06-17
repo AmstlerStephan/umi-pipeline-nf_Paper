@@ -1,0 +1,27 @@
+# Installation guide to install consequmi, following the instruction at: https://github.com/JGEnglishLab/ConSeqUMI/wiki/Installation-Instructions
+
+# Make directory
+mkdir conseq
+cd conseq
+
+# Prepare conda environment
+conda create -y -n conseq
+conda activate conseq
+conda install python=3.8
+
+# Download github reposiory and install enviroment
+git clone https://github.com/JGEnglishLab/ConSeqUMI.git
+cd ConSeqUMI
+pip install -e .
+cd ..
+
+# Install starcode (clustering algorithm)
+git clone https://github.com/gui11aume/starcode.git
+cd starcode
+make
+# move starcode to your conseq conda environment bin
+mv starcode /home/stephanamstler/anaconda3/envs/conseq/bin/starcode
+
+# Run consequmi
+conda activate conseq
+conseq -h

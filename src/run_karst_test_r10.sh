@@ -1,9 +1,9 @@
 #!/bin/bash
 
 longread_umi nanopore_pipeline \
-  -d other_pipelines/karst/longread_umi/test_data/ont_r10_zymo_rrna.fq \
+  -d pipelines/karst/longread_umi/test_data/ont_r10_zymo_rrna.fq \
   -v 25 \
-  -o other_pipelines/karst/out/test_r10 \
+  -o pipelines/karst/out/test_r10 \
   -s 90 \
   -e 90 \
   -m 3500 \

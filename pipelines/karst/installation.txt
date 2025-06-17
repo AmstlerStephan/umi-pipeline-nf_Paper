@@ -1,0 +1,16 @@
+
+# longread_umi pipeline
+wget https://raw.githubusercontent.com/SorenKarst/longread_umi/master/scripts/install_conda.sh
+bash ./install_conda.sh
+conda init; source ~/.bashrc
+conda activate longread_umi
+echo "$CONDA_PREFIX/longread_umi"
+git clone https://github.com/SorenKarst/longread_umi.git
+find ./longread_umi -name "*.sh" -exec chmod +x {} \;
+
+# install usearch
+wget https://www.drive5.com/downloads/usearch11.0.667_i86linux32.gz
+gzip -d usearch11.0.667_i86linux32.gz 
+# needs to be renamed to usearch so it can be used by the longread_umi pipeline
+mv usearch11.0.667_i86linux32 /usr/local/bin/usearch
+chmod +x /home/stephanamstler/anaconda3/envs/conseq/bin/usearch
