@@ -1,4 +1,7 @@
 data/fastq
+data/silva
+data/Zymo*
+data/karst
 pipelines/consequmi/out
 pipelines/karst/out
 pipelines/umi-pipeline-nf/out
