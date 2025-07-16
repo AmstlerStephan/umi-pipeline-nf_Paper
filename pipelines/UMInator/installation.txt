@@ -1,6 +1,0 @@
-# UMInator is a Nextflow pipeline based on the results of karst et al. 
-# The pipeline has a similar design and a high correlation with the results of karst, but is more flexible in specifying the UMI design and other values. 
-
-git clone https://github.com/MaestSi/UMInator.git
-cd UMInator
-chmod 755 *
