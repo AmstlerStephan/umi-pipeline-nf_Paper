@@ -1,2 +1,0 @@
-
-export SEQTK=/home/stephanamstler/umi-pipeline-nf_Paper/pipelines/karst/seqtk/seqtk
