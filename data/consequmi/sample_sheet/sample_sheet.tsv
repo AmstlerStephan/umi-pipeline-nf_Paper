@@ -1,0 +1,6 @@
+barcode	sample	replicate	run_number	sample_number
+barcode01	patient4	replicate1	SRR32256577	SAMN46708652
+barcode02	patient3	replicate1	SRR32256578	SAMN46708653
+barcode03	patient2	replicate1	SRR32256579	SAMN46708654
+barcode04	patient1	replicate2	SRR32256580	SAMN46708655
+barcode05	patient1	replicate1	SRR32256581	SAMN46708656 	

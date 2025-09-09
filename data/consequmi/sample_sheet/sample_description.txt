@@ -1,0 +1,41 @@
+Project: 
+GEO: GSE288938
+https://www.ncbi.nlm.nih.gov/bioproject/?term=GSE288938
+
+
+samples Sars-CoV2:
+
+patient1 - replicate1:
+
+Run number: SRR32256581	
+Sample number: SAMN46708656 (https://www.ncbi.nlm.nih.gov/biosample/SAMN46708656)
+Fastq file accession: https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&page_size=10&acc=SRR32256581&display=download
+barcode: barcode05
+
+patient1 - replicate2:
+
+Run number: SRR32256580
+Sample number: SAMN46708655 (https://www.ncbi.nlm.nih.gov/biosample/SAMN46708655)
+Fastq file accession: https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR32256580&display=download
+barcode: barcode04
+
+patient2 - replicate1:
+
+Run number: SRR32256579
+Sample number: SAMN46708654 (https://www.ncbi.nlm.nih.gov/biosample/SAMN46708654)
+Fastq file accession: https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR32256579&display=download
+barcode: barcode03
+
+patient3 - replicate1:
+
+Run number: SRR32256578
+Sample number: SAMN46708653 (https://www.ncbi.nlm.nih.gov/biosample/SAMN46708653)
+Fastq file accession: https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR32256578&display=download
+barcode: barcode02
+
+patient4 - replicate1:
+
+Run number: SRR32256577
+Sample number: SAMN46708652 (https://www.ncbi.nlm.nih.gov/biosample/SAMN46708652)
+Fastq file accession: https://trace.ncbi.nlm.nih.gov/Traces/?view=run_browser&acc=SRR32256577&display=download
+barcode: barcode01
