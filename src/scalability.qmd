@@ -1,0 +1,605 @@
+---
+title: "scalability"
+format: html
+editor: visual
+---
+
+```{r}
+# Libraries
+library(tidyverse)
+library(lubridate)
+library(flextable)
+library(scales)
+library(officer)
+library(patchwork)
+```
+
+# Functions
+```{r}
+# Function to read a trace file and add configuration info
+read_trace_file <- function(path) {
+  folder <- basename(dirname(path))
+  
+  read_tsv(path, show_col_types = FALSE) %>%
+    separate(process, c("pipeline", "workflow", "process", "label"), sep = ":| ", fill = "right") %>%
+    mutate(
+      config_folder = folder,
+      sample = str_extract(folder, "sample[0-9]+"),
+      sample_num = as.numeric(str_remove(sample, "sample")),
+      mode = ifelse(str_detect(folder, "gpu-true"), "GPU", "CPU"),
+      polishing = ifelse(str_detect(folder, "ref-true"), "Reference-based", "POA-based"), 
+      duration = as.character(duration),
+      exit = as.character(exit),
+      start = ymd_hms(start),
+      complete = ymd_hms(complete),
+      duration_sec = as.numeric(difftime(complete, start, units = "secs")),
+      sample = factor(sample, levels = unique(sample[order(sample_num)])),
+      condition = paste( mode, polishing ),
+      condition_order = case_when(
+        str_detect(condition, "GPU Reference-based") ~ 1,
+        str_detect(condition, "CPU Reference-based") ~ 2,
+        str_detect(condition, "GPU POA-based") ~ 3,
+        str_detect(condition, "CPU POA-based") ~ 4
+      )
+    )
+}
+```
+
+# Paths
+```{r}
+# Load all trace.txt files
+trace_paths <- list.files(
+  path = "../scalability/nextflow_stats",
+  pattern = "trace.txt",
+  recursive = TRUE,
+  full.names = TRUE
+)
+```
+
+# Load data 
+```{r}
+trace_data <- 
+  lapply(trace_paths, read_trace_file) %>% 
+  bind_rows()
+
+```
+
+# Parse tables
+```{r}
+# Parse start and complete times and calculate duration
+trace_data_parsed <- trace_data
+```
+
+# Runtime per process
+```{r}
+## 1. Process-level summary
+duration_summary <- 
+  trace_data_parsed %>%
+  group_by(polishing, mode, sample, process) %>%
+  summarise(
+    n_tasks = n(),
+    mean_duration = mean(duration_sec, na.rm = TRUE),
+    median_duration = median(duration_sec, na.rm = TRUE),
+    sd_duration = sd(duration_sec, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+## Table
+```{r}
+publication_table_duration_summary <- flextable(duration_summary %>%
+                                                  arrange(sample, polishing, mode, process) %>%
+                                                  mutate(across(where(is.numeric), round, 2))) %>%
+  theme_booktabs() %>%
+  autofit() %>%
+  set_caption("Execution time per process (seconds)") %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>% 
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%  
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5)) %>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+doc_duration_summary <- read_docx() %>%
+  body_add_flextable(publication_table_duration_summary)
+
+print(doc_duration_summary, target = "../scalability/out/SuppTable_duration_summary.docx")
+
+```
+
+## Plot
+```{r}
+p.runtime_per_process <- 
+  duration_summary %>% 
+  ggplot(
+    aes(
+      x = process, 
+      y = median_duration, 
+      fill = mode
+    )
+  )+
+  geom_bar(
+    stat = "identity",
+    position = "dodge"
+  ) +
+  facet_grid(polishing ~ sample, scales = "free_x") +
+  coord_flip() +
+  labs(
+    x = "Process", 
+    y = "Median Duration [s]", 
+    fill = "Mode"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 20, colour = "black"),
+    axis.text = element_text(colour = "black"),
+  )
+
+ggsave(
+  plot = p.runtime_per_process,
+  filename = "runtime_per_process.jpeg",
+  path = "../scalability/out/",
+  width = 12, height = 9
+)
+
+```
+
+# Runtime normalized per task
+```{r}
+runtime_per_task <- trace_data_parsed %>%
+  mutate(
+    duration = as.numeric(difftime(complete, start, units = "secs"))
+  ) %>% 
+  group_by(polishing, mode, sample, sample_num, process) %>%
+  summarise(
+    n = n(),
+    total_runtime_sec = sum(duration),
+    total_runtime_sec_normalized = total_runtime_sec / n,
+    .groups = "drop"
+  ) %>% 
+  drop_na()
+```
+
+## Table 
+```{r}
+table_runtime_per_task <- runtime_per_task %>%
+  arrange(sample, polishing, mode, process) %>%
+  mutate(
+    total_runtime_sec = round(total_runtime_sec, 2),
+    total_runtime_sec_normalized = round(total_runtime_sec_normalized, 2)
+  ) %>%
+  select(
+    "Samples [n]" = sample_num,
+    Polishing = polishing,
+    Mode = mode,
+    Process = process,
+    `Total Runtime [s]` = total_runtime_sec,
+    `Normalized Runtime [s/task]` = total_runtime_sec_normalized,
+    `Number of Tasks` = n
+  )
+
+# Create flextable
+publication_table_runtime_per_task <- flextable(table_runtime_per_task) %>%
+  theme_booktabs() %>%
+  autofit() %>%
+  set_caption("Total and normalized pipeline runtime per process and configuration") %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>%
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5)) %>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Save to Word
+doc_runtime_per_task <- read_docx() %>%
+  body_add_flextable(publication_table_runtime_per_task)
+
+print(doc_runtime_per_task, target = "../scalability/out/SuppTable_runtime_per_task.docx")
+
+```
+
+# Total and normalized runtime
+```{r}
+## 2. Total runtime per condition
+total_runtime <- trace_data_parsed %>%
+  group_by(polishing, mode, sample, sample_num, condition_order) %>%
+  summarise(
+    start = min(start, na.rm = TRUE),
+    end_time = max(complete, na.rm = TRUE),
+    n = n(),
+    total_runtime_sec = as.numeric(difftime(end_time, start, units = "secs")),
+    total_runtime_sec_normalized = as.numeric(difftime(end_time, start, units = "secs")) / n,
+    .groups = "drop"
+  )
+```
+
+
+## Tables
+
+### Total runtime
+```{r}
+# Total runtime table
+table_total_runtime <- total_runtime %>%
+  arrange(sample, polishing, mode) %>%
+  mutate(total_runtime_sec = round(total_runtime_sec, 2))
+
+publication_table_total_runtime <- flextable(table_total_runtime) %>%
+  theme_booktabs() %>%
+  autofit() %>%
+  set_caption("Total pipeline runtime per configuration (seconds)") %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>%
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5)) %>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Save to Word
+doc_total_runtime <- read_docx() %>%
+  body_add_flextable(publication_table_total_runtime)
+
+print(doc_total_runtime, target = "../scalability/out/SuppTable_total_runtime.docx")
+
+```
+
+### Normalized runtime 
+```{r}
+# Normalized runtime table
+table_normalized_runtime <- total_runtime %>%
+  arrange(sample, polishing, mode) %>%
+  mutate(total_runtime_sec_normalized = round(total_runtime_sec_normalized, 2))
+
+publication_table_normalized_runtime <- flextable(table_normalized_runtime) %>%
+  theme_booktabs() %>%
+  autofit() %>%
+  set_caption("Normalized pipeline runtime per configuration (seconds per task)") %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>%
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5)) %>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Save to Word
+doc_normalized_runtime <- read_docx() %>%
+  body_add_flextable(publication_table_normalized_runtime)
+
+print(doc_normalized_runtime, target = "../scalability/out/SuppTable_normalized_runtime.docx")
+
+```
+
+### combined
+```{r}
+# Combine total and normalized runtime into one table
+table_runtime_combined <- total_runtime %>%
+  arrange(polishing, mode, sample_num) %>%
+  mutate(
+    total_runtime_sec = round(total_runtime_sec, 2),
+    total_runtime_sec_normalized = round(total_runtime_sec_normalized, 2)
+  ) %>%
+  select(
+    Polishing = polishing,
+    Mode = mode,
+    `Samples [n]` = sample_num,
+    `Clusters [n]` = n,
+    `Total Runtime [s]` = total_runtime_sec,
+    `Normalized Runtime [s/task]` = total_runtime_sec_normalized
+  )
+
+# Create flextable
+publication_table_runtime_combined <- flextable(table_runtime_combined) %>%
+  theme_booktabs() %>%
+  autofit() %>%
+  set_caption("Total and normalized pipeline runtime per configuration") %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>%
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5)) %>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Save to Word
+doc_runtime_combined <- read_docx() %>%
+  body_add_flextable(publication_table_runtime_combined)
+
+print(doc_runtime_combined, target = "../scalability/out/SuppTable_runtime_combined.docx")
+```
+
+## Plots
+```{r}
+# Plot 1: total runtime
+p_total_runtime_facet <- 
+  total_runtime %>% 
+  ggplot(aes(
+    x = as.factor(sample_num), 
+    y = total_runtime_sec, 
+    group = mode
+  )) +
+  geom_bar(
+    stat = "identity", 
+    position = "dodge"
+  ) +
+  facet_wrap(
+    vars(polishing), scales = "free",
+  ) +
+  labs(
+    x = "Samples [n]", 
+    y = "Total\nRuntime [s]", 
+    fill = "Mode"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 20, colour = "black"),
+    axis.text = element_text(colour = "black"),
+  )
+
+# Plot 2: normalized runtime
+p_normalized_runtime_facet <- 
+  total_runtime %>% 
+  ggplot(
+    aes(
+      x = as.factor(sample_num), 
+      y = total_runtime_sec_normalized, 
+      group = mode
+    )
+  ) +
+  geom_point(
+    position = "dodge", 
+    size = 3
+  ) +
+  facet_wrap(
+    vars(polishing), 
+  ) +
+  labs(
+    x = "Samples [n]", 
+    y = "Normalized\nRuntime [s]", 
+    color = "Mode"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 20, colour = "black"),
+    axis.text = element_text(colour = "black"), 
+  )
+```
+
+
+### patchwork
+```{r}
+design_runtime_facet <- "AB"
+
+# Combine with patchwork, label A/B
+pw_runtime_facet <- 
+  wrap_plots(
+    A = p_total_runtime_facet, 
+    B = p_normalized_runtime_facet, 
+    design = design_runtime_facet
+  ) +
+  plot_annotation(
+    tag_levels = "A",
+  ) +
+  plot_layout(
+    axes = "collect",
+    guides = "collect"
+  )
+
+pw_runtime_facet
+
+```
+
+## Plots - not faceted
+```{r}
+colors <- 
+  c(
+    "CPU POA-based" = "#4DBBD5",
+    "GPU POA-based" = "#E64B35",
+    "CPU Reference-based" = "#00A087",
+    "GPU Reference-based" = "#3C5488"
+  )
+
+
+p_total_runtime_no_facet <- 
+  total_runtime %>% 
+  ggplot(aes(
+    x = as.factor(sample_num),
+    y = total_runtime_sec,
+    fill = reorder(paste( mode, polishing ), condition_order),
+  )) +
+  geom_bar(
+    stat = "identity", 
+    position = "dodge"
+  )  + 
+  # add text with number of processes per panel
+  # geom_text(
+  #   aes(
+  #     y = max(total_runtime_sec) * 1.1,
+  #     label = n
+  #   ),
+  #   size = 6
+  # ) +
+  scale_y_continuous(
+    labels = comma,
+    expand = expansion(mult = c(0, 0.08))  # 20% extra space at the top
+  ) +
+  labs(
+    x = "Samples [n]",
+    y = "Total Runtime [s]",
+    fill = "Condition"
+  ) +
+  scale_fill_manual(values = colors) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 20, colour = "black"),
+    axis.text = element_text(colour = "black"),
+  )
+
+p_normalized_runtime_no_facet <- 
+  total_runtime %>%
+  ggplot(aes(
+    x = as.factor(sample_num),
+    y = total_runtime_sec_normalized,
+    fill = reorder(paste( mode, polishing ), condition_order),
+  )) +
+  geom_bar(
+    stat = "identity", 
+    position = "dodge"
+  )  + 
+  scale_y_continuous(labels = comma) +
+  labs(
+    x = "Samples [n]",
+    y = "Normalized Runtime [s]",
+    fill = "Condition"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 20, colour = "black"),
+    axis.text = element_text(colour = "black"), 
+  )
+```
+
+### patchwork
+```{r}
+design_runtime_no_facet <- "AB"
+
+# Combine with patchwork, label A/B
+pw_runtime_no_facet <- 
+  wrap_plots(
+    A = p_total_runtime_no_facet, 
+    B = p_normalized_runtime_no_facet, 
+    design = design_runtime_no_facet
+  ) +
+  plot_annotation(
+    tag_levels = "A",
+  ) +
+  plot_layout(
+    axes = "collect",
+    guides = "collect"
+  ) &
+  theme(
+    legend.position = "bottom", 
+    axis.text.y = element_text(angle = 90, hjust = 0.5)
+  )
+
+pw_runtime_no_facet
+
+
+ggsave(
+  plot = pw_runtime_no_facet, 
+  filename = "pw_runtime_no_facet.jpeg", 
+  path = "../scalability/out/",
+  height = 9, 
+  width = 12, 
+  dpi = 600
+)
+```
+
+## scatter plot
+```{r}
+p_total_runtime_scatter <-
+total_runtime %>% 
+  ggplot(aes(
+    x = sample_num,
+    y = total_runtime_sec,
+    color = paste(mode, polishing ),
+  )) +
+  geom_point()  + 
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_y_continuous(
+    labels = comma,
+  ) +
+  labs(
+    x = "Samples [n]",
+    y = "Total Runtime [s]",
+    color = "Condition"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 20, colour = "black"),
+    axis.text = element_text(colour = "black"),
+    legend.position = "bottom"
+  )
+
+
+ggsave(
+  plot = p_total_runtime_scatter, 
+  filename = "p_total_runtime_scatter.jpeg", 
+  path = "../scalability/out/",
+  height = 9, 
+  width = 12, 
+  dpi = 600
+)
+```
+
+### normalized runtime
+```{r}
+# p_normalized_runtime_no_facet <- 
+total_runtime %>%
+  ggplot(aes(
+    x = sample_num,
+    y = total_runtime_sec_normalized,
+    color = paste(mode, polishing ),
+  )) +
+  geom_point()  + 
+  geom_smooth(method = "lm", se = FALSE) +  scale_y_continuous(labels = comma) +
+  labs(
+    x = "Samples [n]",
+    y = "Normalized Runtime [s]",
+    fill = "Condition"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 20, colour = "black"),
+    axis.text = element_text(colour = "black"), 
+  )
+```
+
+### patchwork - scatter, bar 
+```{r}
+design_runtime_no_facet <- "AB"
+
+# Combine with patchwork, label A/B
+# pw_runtime_no_facet <- 
+  wrap_plots(
+    A = p_total_runtime_scatter, 
+    B = p_normalized_runtime_no_facet, 
+    design = design_runtime_no_facet
+  ) +
+  plot_annotation(
+    tag_levels = "A",
+  ) +
+  plot_layout(
+    axes = "collect",
+    guides = "collect"
+  ) &
+  theme(
+    legend.position = "bottom", 
+    axis.text.y = element_text(angle = 90, hjust = 0.5)
+  )
+
+pw_runtime_no_facet
+
+
+ggsave(
+  plot = pw_runtime_no_facet, 
+  filename = "pw_runtime_no_facet.jpeg", 
+  path = "../scalability/out/",
+  height = 9, 
+  width = 12, 
+  dpi = 600
+)
+```
+

@@ -1,0 +1,349 @@
+---
+title: "Karst_benchmarking"
+format: html
+editor: visual
+---
+
+# library
+
+```{r}
+library(tidyverse)
+library(flextable)
+library(officer)
+```
+
+# file paths
+
+```{r}
+abundance_table_umi_poa_path <-  "../Karst/context/poa/abundance_table_genus.tsv"
+abundance_table_umi_reference_path <-  "../Karst/context/reference_based/abundance_table_genus.tsv"
+abundance_table_karst_path <-  "../Karst/supplementary material/relative_abundance_zymo.txt"
+abundance_table_karst_new_path <-  "../Karst/karst/abundance_table_genus.tsv"
+```
+
+# read files
+
+```{r}
+abundance_table_umi_poa <- read_tsv(abundance_table_umi_poa_path) %>% 
+  mutate(
+    pipeline = "umi-pipeline-nf", 
+    polishing = "POA-based"
+  )
+
+abundance_table_umi_reference <- read_tsv(abundance_table_umi_reference_path) %>% 
+  mutate(
+    pipeline = "umi-pipeline-nf", 
+    polishing = "Reference-based"
+    
+  )
+
+abundance_table_karst <- read_tsv(abundance_table_karst_path)
+
+abundance_table_karst_new <- read_tsv(abundance_table_karst_new_path) %>% 
+  mutate(
+    pipeline = "karst", 
+    polishing = "karst"
+    
+  )
+
+```
+
+# tables
+
+## taxonomy list
+
+```{r}
+species_list <- abundance_table_karst %>% 
+  select(Species) %>% 
+  pull()
+```
+
+## compare abundance
+
+### parse karst
+
+```{r}
+abundance_table_karst_parsed <-
+  abundance_table_karst %>% 
+  rename(
+    Genus = Species 
+  )
+```
+
+### parse umi-pipeline-nf
+
+```{r}
+
+# There was a change in taxonimic naming after the karst publication and
+# Lactobacillus fermentum is now called Limosilactobacillus fermentum
+abundance_table_parsed <-
+  abundance_table_umi_poa %>% 
+  bind_rows(abundance_table_umi_reference) %>% 
+  # bind_rows(abundance_table_karst_new) %>% 
+  separate(tax, into = paste0("Rank", 1:7), sep = ";", fill = "right") %>%
+  rename(Genus = Rank7) %>% 
+  select(
+    Genus, 
+    total, 
+    pipeline, 
+    polishing)
+
+genus_abundance <-
+  abundance_table_parsed %>%
+  mutate(
+    Genus = if_else(str_detect(Genus, "Limosilactobacillus"), "Lactobacillus", Genus),
+    Genus = if_else(Genus %in% species_list, Genus, "other")
+  ) %>% 
+  group_by(Genus, pipeline, polishing) %>%
+  summarise(
+    total_abundance = sum(total, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  group_by(pipeline, polishing) %>% 
+  mutate(
+    total_reads = sum(total_abundance),
+    relative_abundance = total_abundance / total_reads * 100, 
+  ) %>% 
+  select(Genus, relative_abundance, pipeline, polishing, total_abundance, total_reads)
+
+```
+
+## comparison
+
+```{r}
+comparison <-
+  abundance_table_karst_parsed %>% 
+  full_join(genus_abundance, by = "Genus") %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  select(
+    Genus, ONT_10.3_UMI, Theoretical, relative_abundance, pipeline, polishing, total_abundance, total_reads
+  )
+
+comparison_long <- 
+  comparison %>%
+  select(Genus, Theoretical, ONT_10.3_UMI, relative_abundance, pipeline, polishing) %>% 
+  rename(
+    "longread_umi (Karst et al.)" = ONT_10.3_UMI, 
+    # "other" = relative_abundance,
+  ) %>% 
+  pivot_longer(cols = c(relative_abundance), names_to = "Sample", values_to = "Abundance")
+
+# r_pipelines <- cor(comparison$relative_abundance_umi_pipeline_nf, comparison$ONT_10.3_UMI)
+# rsquare_pipelines <- summary(lm(ONT_10.3_UMI~relative_abundance_umi_pipeline_nf, data=comparison))$r.squared
+
+correlation_pipelines <- 
+  comparison %>% 
+  group_by(polishing) %>% 
+  group_nest() %>%
+  mutate(
+    model = map(data, ~ lm(ONT_10.3_UMI ~ relative_abundance, data = .x)),
+    r_squared = map_dbl(model, ~ summary(.x)$r.squared),
+    r = map_dbl(data, ~ cor(.x$relative_abundance, .x$ONT_10.3_UMI))
+  ) %>%
+  select(polishing, r_squared, r)
+
+# Comparison with expected data
+# Should we sequence the zymo sampleset and show that we are better than karst by now? In case we are. 
+# PCR might induce many artifacts for us as well. 
+
+# cor(comparison$ONT_10.3_UMI, comparison$Theoretical)
+# cor(comparison$relative_abundance_umi_pipeline_nf, comparison$Theoretical)
+
+```
+
+### Table
+
+#### correlation
+
+```{r}
+# Round values for publication
+correlation_pipelines <- correlation_pipelines %>%
+  mutate(
+    r_squared = round(r_squared, 3),
+    r = round(r, 3)
+  )
+
+# Create flextable
+ft_correlation_pipelines <- flextable(correlation_pipelines) %>%
+  set_header_labels(
+    polishing = "Polishing Method",
+    r_squared = "R²",
+    r = "Pearson's r"
+  ) %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>% 
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%  
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5))%>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5)) 
+
+# Export to Word
+doc_correlation_pipelines <- read_docx() %>%
+  body_add_par("Correlation Summary by Polishing Method", style = "heading 1") %>%
+  body_add_flextable(ft_correlation_pipelines) %>%
+  body_add_par("", style = "Normal")  # optional spacer
+
+print(doc_correlation_pipelines, target = "../Karst/out/SuppTable_correlation_pipelines.docx")
+```
+
+#### comparison
+
+```{r}
+# Optional: round numeric columns
+comparison <- comparison %>%
+  mutate(
+    across(c(ONT_10.3_UMI, Theoretical, relative_abundance), round, 2)
+  ) %>% 
+  select(-Theoretical)
+
+# Create formatted flextable
+ft_comparison <- flextable(comparison) %>%
+  set_header_labels(
+    Genus = "Genus",
+    ONT_10.3_UMI = "longread_umi (Karst et al.)",
+    # Theoretical = "Theoretical (%)",
+    relative_abundance = "Relative Abundance (%)",
+    pipeline = "Pipeline",
+    polishing = "Polishing",
+    total_abundance = "Total Abundance",
+    total_reads = "Total Reads"
+  ) %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  # padding(padding = 5, part = "all") %>% 
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%  
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5)) %>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Export to Word document
+doc_comparison <- read_docx() %>%
+  body_add_par("Relative Abundance Table by Genus", style = "heading 1") %>%
+  body_add_flextable(ft_comparison)
+
+print(doc_comparison, target = "../Karst/out/SuppTable_comparison_abundance.docx")
+```
+
+# compare karst vs umi-pipeline-nf vs theoretical abundance
+
+```{r}
+
+p.relative_abundance_comparison <- 
+  ggplot(comparison_long, aes(x = reorder(Genus, Abundance), y = Abundance, fill = Sample)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    x = "Genus", 
+    y = "Relative abundance [%]",
+    title = "Genus-Level Comparison of Abundances"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 22, colour = "black"),
+    axis.text = element_text(colour = "black"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+ggsave(
+  plot = p.relative_abundance_comparison,
+  filename = "relative_abundance_comparison.jpeg", 
+  path = "../Karst/out/",
+  width = 12, 
+  height = 9
+)
+```
+
+# compare karst vs umi-pipeline-nf vs theoretical abundance
+
+```{r}
+
+p.relative_abundance_comparison_polishing <-
+  comparison %>% 
+  ggplot(aes(x = ONT_10.3_UMI, y = relative_abundance)) +
+  geom_smooth(method = "lm", color = "black", fill = "grey60") +
+  geom_point(aes(color = Genus), size = 3) +
+  facet_wrap(vars(polishing)) + 
+  labs(
+    x = "longread_umi (Karst et al.)", 
+    y = "umi-pipeline-nf", 
+    # title = "Relative abundance of each Genus (ONT MinION R10.3)"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 22, color = "black"), 
+    axis.text = element_text(colour = "black")
+  )
+
+ggsave(
+  plot = p.relative_abundance_comparison_polishing,
+  filename = "relative_abundance_comparison_polishing.jpeg", 
+  path = "../Karst/out/",
+  width = 12, 
+  height = 9
+)
+```
+
+# compare karst with umi-pipeline-nf
+
+```{r}
+
+# p.correlation_longread_umi_umi_pipeline_nf <- 
+#   comparison %>% 
+#   ggplot(aes(ONT_10.3_UMI, relative_abundance_umi_pipeline_nf)) +
+#   geom_smooth(method = "lm", color = "black", fill = "grey60") +
+#   geom_point(aes(color = Genus), size = 3) +
+#   annotate(geom = "text", x = 3, y = 30, label = paste("R^2 ==", round(rsquare_pipelines, 3)), parse = TRUE, size = 8) +
+#   annotate(geom = "rect", xmin = 0, xmax = 6, ymin = 28, ymax = 32, fill = NA, color = "black") + 
+#   labs(
+#     x = "longread_umi (Karst et al.)", 
+#     y = "umi-pipeline-nf", 
+#     title = "Relative abundance of each Genus (ONT MinION R10.3)"
+#   ) +
+#   theme_bw() +
+#   theme(
+#     text = element_text(size = 22, color = "black"), 
+#     axis.text = element_text(colour = "black")
+#   )
+# 
+# ggsave(
+#   plot = p.correlation_longread_umi_umi_pipeline_nf,
+#   filename = "correlation_longread_umi_umi_pipeline_nf.jpeg", 
+#   path = "../Karst/out/",
+#   width = 12, 
+#   height = 9
+# )
+
+```
+
+# Lunch seminar
+## correlation 
+```{r}
+  comparison %>% 
+  ggplot(aes(x = ONT_10.3_UMI, y = relative_abundance)) +
+  geom_smooth(method = "lm", color = "black", fill = "grey60") +
+  geom_point(aes(color = Genus), size = 3) +
+  facet_wrap(vars(polishing)) + 
+  labs(
+    x = "longread_umi (Karst et al.)", 
+    y = "umi-pipeline-nf", 
+    # title = "Relative abundance of each Genus (ONT MinION R10.3)"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 28, color = "black"), 
+    axis.text = element_text(colour = "black")
+  )
+
+ggsave(
+  filename = "lunchseminar_benchmarking_karst.jpeg", 
+  path = "../lunch_seminar/out/",
+  dpi = 600,
+  width = 12, 
+  height = 9
+)
+```
+

@@ -1,0 +1,412 @@
+---
+title: "SARS-CoV-2_benchmarking"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(Biostrings)
+library(networkD3)
+library(flextable)
+library(scales)
+library(officer)
+library(patchwork)
+```
+
+# functions
+
+```{r}
+make_publication_table <- function(df, caption = NULL) {
+  flextable(df) %>%
+    autofit() %>%
+    {if (!is.null(caption)) set_caption(., caption) else .} %>%
+    align(align = "center", part = "all") %>%
+    bold(part = "header") %>%
+    fontsize(size = 11, part = "all") %>%
+    padding(padding = 5, part = "all") %>%
+    theme_zebra() %>%
+    border_remove() %>%
+    border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%
+    border_inner_v(border = fp_border(color = "grey60", width = 0.5)) %>%
+    border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+}
+```
+
+# Paths
+
+```{r}
+nextclade_paths <- list.files(
+  path = "../ConSeqUmi/output/", 
+  pattern = "nextclade.tsv", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+cluster_stats_paths <- list.files(
+  path = "../ConSeqUmi/cluster_stats/", 
+  pattern = "cluster_stats.tsv", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+sample_sheet_path <- "../ConSeqUmi/sample_sheet.tsv" 
+```
+
+# load files
+
+```{r}
+nextclade <- lapply(nextclade_paths, function(path){
+  barcode <- str_extract(path, "barcode\\d\\d")
+  
+  read_tsv(path, show_col_types = FALSE) %>% 
+    mutate(
+      barcode = barcode
+    )
+}) %>% 
+  bind_rows()
+
+cluster_stats <- lapply(cluster_stats_paths, function(path){
+  barcode <- str_extract(path, "barcode\\d\\d")
+  
+  read_tsv(path, show_col_types = FALSE) %>% 
+    mutate(
+      barcode = barcode
+    )
+}) %>% 
+  bind_rows()
+
+sample_sheet <- read_tsv(sample_sheet_path)
+```
+
+# filter cluster stats
+
+```{r}
+min_reads_per_cluster <- 12
+
+cluster_stats_filtered <- 
+  cluster_stats %>% 
+  filter(cluster_written == 1) %>% 
+  filter(reads_found >= min_reads_per_cluster) %>% 
+  mutate(
+    reads_found = reads_found_fwd + reads_found_rev
+  ) %>% 
+  select(cluster_id, barcode, reads_found)
+
+```
+
+# Filter Nextclade results
+
+Remove replicate of sample#1. Too much for the little bechmark in the paper and data of an R10 flongle might anyway not be very reliable. Filter for Spike variants only
+
+```{r}
+nextclade_filtered <- 
+  nextclade %>% 
+  mutate(
+    aaSubstitutions = aaSubstitutions %>%
+      str_split(",") %>%
+      map(~ .x[str_detect(.x, "^S:")]) %>%
+      map_chr(~ if (length(.x) > 0) paste(.x, collapse = ",") else NA_character_)
+  ) %>% 
+  drop_na(aaSubstitutions) %>% 
+  group_by(barcode, aaSubstitutions) %>% 
+  mutate(n = n()) %>% 
+  filter(str_detect(barcode, "barcode04", negate = TRUE)) %>%
+  left_join(cluster_stats_filtered, by = c("seqName" = "cluster_id", "barcode")) %>% 
+  select(
+    seqName,
+    clade, 
+    clade_display, 
+    clade_nextstrain, 
+    Nextclade_pango, 
+    qc.overallStatus,
+    substitutions, 
+    aaSubstitutions, 
+    aaDeletions, 
+    aaInsertions, 
+    `founderMuts['clade'].nodeName`, 
+    `founderMuts['clade'].aaSubstitutions`, 
+    `founderMuts['Nextclade_pango'].aaDeletions`, 
+    barcode, 
+    reads_found, 
+    n
+  ) %>% 
+  inner_join(sample_sheet)
+```
+
+# Variant classification
+
+```{r}
+variant_classification <- 
+  nextclade_filtered %>% 
+  group_by(clade_display, sample) %>% 
+  summarise(
+    n = n(), 
+    .groups = "drop"
+  ) %>% 
+  group_by(sample)%>% 
+  mutate(
+    total = sum(n), 
+    percent = n / total * 100
+  )
+  
+variant_classification
+```
+
+## Table
+
+```{r}
+table_variant_classification <- 
+  variant_classification %>% 
+  mutate(
+    percent = round(percent, 2)
+  ) %>%
+  arrange(sample) %>% 
+  select(
+   Sample = sample, 
+   "Clade (Strain)" = clade_display, 
+   "Consensus sequences per clade [n]" = n, 
+   "Consenus sequences per clade [%]" = percent,
+   "Total consensus sequences per sample [n]" = total, 
+  )
+
+publication_table_variant_classification <- 
+  make_publication_table(table_variant_classification, "SARS-CoV-2 viral lineage assignment (Nextclade)")
+  
+doc_variant_classification <- 
+  read_docx() %>%
+  body_add_flextable(publication_table_variant_classification)
+
+print(doc_variant_classification, target = "../ConSeqUmi/out/SuppTable_doc_variant_classification.docx")
+```
+
+# Diversity
+
+```{r}
+diversity <- 
+  nextclade_filtered %>% 
+  group_by(sample) %>%
+  mutate(
+    total = n()
+  ) %>% 
+  group_by(sample, aaSubstitutions, total) %>% 
+  summarise(
+    n = n()
+  )
+
+unique_spikes <- 
+  diversity %>% 
+  select(sample, aaSubstitutions, total) %>% 
+  group_by(sample, total) %>% 
+  summarise(
+    n = n()
+  )
+
+```
+
+# clades
+
+```{r}
+nextclade_filtered %>% 
+  group_by(sample, clade) %>% 
+  summarise(n = n())
+
+```
+
+# Patient #1
+
+```{r}
+patient1 <- 
+  nextclade_filtered %>% 
+  filter(sample == "patient1") %>% 
+  filter(replicate == "replicate1") %>% 
+  mutate(
+    A222V = str_detect(aaSubstitutions, "A222V"), 
+    V367L = str_detect(aaSubstitutions, "V367L"), 
+    Y473 = str_detect(aaSubstitutions, "473"), 
+    Y145H = str_detect(aaSubstitutions, "Y145H"), 
+    I834V = str_detect(aaSubstitutions, "I834V"), 
+    I834 = str_detect(aaSubstitutions, "I834"), 
+    I882 = str_detect(aaSubstitutions, "882"), 
+    G142D = str_detect(aaSubstitutions, "G142D"), 
+  )
+```
+
+## Unique spikes
+
+We found 170 unique spike regions in 702 consensus sequences
+
+```{r}
+patient1 %>% 
+  nrow()
+
+patient1 %>% 
+  group_by(aaSubstitutions) %>% 
+  summarise(n = n())
+
+patient1 %>% 
+  select(clade, aaSubstitutions) %>% 
+  group_by(clade, aaSubstitutions) %>% 
+  summarise(count = n()) %>% 
+  group_by(clade) %>% 
+  summarise(
+    unique = sum(count), 
+    n = n()
+  )
+
+```
+
+## 21A/J vs 21I
+
+```{r}
+subclades <- 
+patient1 %>% 
+  group_by(clade_display) %>% 
+  summarise(
+    n = n(), 
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    total = sum(n), 
+    percent = n / total * 100
+  )
+```
+
+### Table
+
+```{r}
+table_subclades <- 
+  subclades %>% 
+  mutate(
+    percent = round(percent, 2)
+  ) %>%
+  arrange(percent) %>% 
+  select(
+   "Clade (Strain)" = clade_display, 
+   "Consensus sequences per clade [n]" = n, 
+   "Consenus sequences per clade [%]" = percent,
+   "Total consensus sequences [n]" = total, 
+  )
+
+publication_table_subclades <- 
+  make_publication_table(table_subclades, "SARS-CoV-2 viral lineage assignment of patient 1 (Nextclade)")
+  
+doc_subclades <- 
+  read_docx() %>%
+  body_add_flextable(publication_table_subclades)
+
+print(doc_subclades, target = "../ConSeqUmi/out/SuppTable_doc_subclades.docx")
+```
+
+## diverse mutations
+
+About half of the 21I variants carried both mutations. We could not find this mutations in about the other half of the variants.
+
+```{r}
+patient1 %>%
+  group_by(clade, Nextclade_pango, A222V, V367L, Y473, Y145H, G142D, I834V) %>% 
+  summarise(n = n())
+```
+
+## A222V and V367L
+
+About half of the 21I variants carried both mutations. We could not find this mutations in about the other half of the variants.
+
+```{r}
+subclade_specific_variants <- 
+patient1 %>%
+  group_by(clade_display, A222V, V367L, G142D, I834V, I882) %>% 
+  summarise(
+    n = n(),
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    total = sum(n), 
+    percent = n / total * 100
+  )
+```
+
+### Table
+
+```{r}
+table_subclade_specific_variants <- 
+  subclade_specific_variants %>% 
+  arrange(clade_display, percent) %>% 
+  mutate(
+    percent = round(percent, 2)
+  ) %>%
+  arrange(percent) %>% 
+  select(
+   "Clade (Strain)" = clade_display, 
+   "Carries A222V" = A222V, 
+   "Carries V367L" = V367L, 
+   "Carries G142D" = G142D, 
+   "Carries I834V" = I834V,
+   "Carries I882" = I882,
+   "Consenus sequences per clade [n]" = n,
+   "Consenus sequences per clade [%]" = percent,
+   "Total consensus sequences [n]" = total, 
+  )
+
+publication_table_subclade_specific_variants <- 
+  make_publication_table(table_subclade_specific_variants, "SARS-CoV-2 viral lineage assignment of patient 1 (Nextclade)")
+  
+doc_subclade_specific_variants <- 
+  read_docx() %>%
+  body_add_flextable(publication_table_subclade_specific_variants)
+
+print(doc_subclade_specific_variants, target = "../ConSeqUmi/out/SuppTable_doc_subclade_specific_variants.docx")
+```
+
+### 21A/J clade not containing G142D
+
+There are publications reporting back mutation of G142D to the WT allele Spike Protein NTD mutation G142D in SARS-CoV-2 Delta VOC lineages is associated with frequent back mutations, increased viral loads, and immune evasion
+
+```{r}
+patient1 %>% 
+  filter(!G142D)
+```
+
+## Lineages Pango
+
+```{r}
+patient1 %>% 
+  group_by(Nextclade_pango) %>% 
+  summarise(n = n())
+```
+
+## G142D in Delta variants
+
+Usually ussed to classify delta variants - but some A/J variants don't contain this mutation
+
+```{r}
+patient1 %>% 
+  group_by(clade, G142D) %>% 
+  summarise(n = n())
+```
+
+## A222V and 882 carriers
+
+We did not find any strains that contained the I882 ATC mutation.
+
+```{r}
+patient1 %>% 
+  filter(A222V & I882)
+
+patient1 %>% 
+  filter(I882)
+```
+
+## I834V carriers
+
+We can confirm this finding as well and also online this mutation is seen in AY.103 lineages
+
+```{r}
+patient1 %>% 
+  group_by(Nextclade_pango, I834V) %>% 
+  summarise(
+    n = n(), .groups = "drop") %>% 
+  mutate(
+    total = sum(n),
+    percentage = n / total * 100
+  )
+```
