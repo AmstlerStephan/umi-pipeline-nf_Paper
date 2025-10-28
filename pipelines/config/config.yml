@@ -1,0 +1,54 @@
+# Name of output folder
+sample_name: umi-pipeline-nf_test
+
+# Input FASTQ files. Can be a (zipped) FASTQ file or a folder containing (zipped) FASTQ files
+input_fastq: data/fastq_pass/barcode02
+
+# Reference genome
+reference_fasta: "data/ref/lpa-ref5104.fasta"
+
+# BED file containing intervals with regions that are going to be analysed
+targets_bed: data/ref/lpa-ref5104.bed
+
+
+############################
+######### Optional #########
+############################
+#
+# Max differences between UMI in read and UMI pattern
+umi_errors: 3
+
+# Min number of reads required for a consensus read
+min_reads_per_cluster: 6
+
+# Max number of 1D used for a consensus read
+max_reads_per_cluster: 20
+
+# Min overlap with target region
+min_overlap: 0.95
+
+# Balance forward and reverse 1D reads in clusters
+balance_strands: False
+
+# Medaka model used to compute consensus reads
+medaka_model: "r1041_e82_400bps_sup_v4.3.0"
+
+# Forward tail of primer (Ftail...UMI...primer)
+fwd_context: "GTATCGTGTAGAGACTGCGTAGG"
+
+# Reverse tail of primer (Rtail...UMI...primer)
+#rev_context: "CACTCGCACTGACTCGATCACT"
+rev_context: "AGTGATCGAGTCAGTGCGAGTG"
+
+# Forward UMI (Ftail...UMI...primer)
+fwd_umi: "TTTVVVVTTVVVVTTVVVVTTVVVVTTT"
+
+# Reverse UMI (Rtail...UMI...primer)
+rev_umi: "AAABBBBAABBBBAABBBBAABBBBAAA"
+
+# Minimum combined UMI length
+min_length: 40
+
+# Maximum combined UMI length
+max_length: 60
+
