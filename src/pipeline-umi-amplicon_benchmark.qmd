@@ -1,0 +1,316 @@
+---
+title: "pipeline-umi-amplicon_benchmark"
+format: html
+editor: visual
+---
+
+# library
+```{r}
+library(tidyverse)
+library(ggvenn)
+library(UpSetR)
+library(ComplexUpset)
+library(patchwork)
+```
+# functions
+```{r}
+
+```
+
+# paths
+```{r}
+mutserve_umi_pipeline_nf_poa_gpu_path <- "../benchmarking/out/mutserve/poa/gpu/poa_based_polishing_context_50_50/consensus_parsed.txt"
+mutserve_umi_pipeline_nf_reference_gpu_path <- "../benchmarking/out/mutserve/reference_based/cpu/reference_based_polishing_context_50_50/consensus_parsed.txt"
+mutserve_pipeline_umi_amplicon_path <- "../pipeline-umi-amplicon/data/umi-pipeline-nf_test/mutserve/barcode02/consensus/barcode02_mutserve_parsed.txt"
+VNTR_pipeline_path <- "../VNTR/data/20240221_wgs_no_signature_approach_1000G_HG00653.tsv"
+```
+
+# load files
+```{r}
+mutserve_umi_pipeline_nf_poa_gpu <- read_delim(mutserve_umi_pipeline_nf_poa_gpu_path) %>% 
+  mutate(
+    pipeline = "umi-pipeline-nf (POA-based)", 
+    method = "POA-based"
+  )
+
+mutserve_umi_pipeline_nf_reference_gpu <- read_delim(mutserve_umi_pipeline_nf_reference_gpu_path) %>% 
+  mutate(
+    pipeline = "umi-pipeline-nf (Reference-based)", 
+    method = "reference-based"
+  )
+
+mutserve_pipeline_umi_amplicon <- read_delim(mutserve_pipeline_umi_amplicon_path) %>% 
+  mutate(
+    pipeline = "ONT pipeline-umi-amplicon (default)", 
+    method = "default"
+  )
+
+VNTR_pipeline <- read_delim(VNTR_pipeline_path) %>% 
+  mutate(
+    pipeline = "vntr-calling-nf (default)", 
+    method = "jlr_no_signature"
+  )
+```
+# Tables
+## parse VNTR
+```{r}
+VNTR_pipeline_parsed <-
+  VNTR_pipeline %>% 
+  mutate(
+    ID = str_split(ID, "\\.", simplify = TRUE)[[1]]
+  ) %>% 
+  group_by(
+    Pos
+  ) %>% 
+  slice_head(n = 1) %>% 
+  select(
+    Sample = ID, 
+    Position = Pos, 
+    Reference = Ref, 
+    Variant, 
+    `Variant-level` = VariantLevel, 
+    pipeline, 
+    method
+  )
+```
+
+## merge tables
+```{r}
+mutserve <- 
+  mutserve_umi_pipeline_nf_poa_gpu %>% 
+  bind_rows(mutserve_umi_pipeline_nf_reference_gpu) %>% 
+  bind_rows(mutserve_pipeline_umi_amplicon) %>% 
+  bind_rows(VNTR_pipeline_parsed)
+```
+
+## compare variants
+```{r}
+# create variant identifier
+mutserve_comp <- mutserve %>%
+  mutate(
+    variant_id = paste(Position, Reference, Variant, sep = "_")
+  ) %>%
+  select(variant_id, Position, Reference, Variant, `Variant-level`, pipeline, method)
+
+mutserve_wide <- mutserve %>%
+  mutate(variant_id = paste(Position, Reference, Variant, sep = "_")) %>%
+  select(variant_id, `Variant-level`, pipeline) %>%
+  pivot_wider(
+    id_cols = variant_id,
+    names_from = pipeline,
+    values_from = `Variant-level`,
+    values_fill = 0
+  )
+
+```
+
+# Plots 
+# venn
+```{r}
+
+mutserve_list <- mutserve_comp %>%
+  group_by(pipeline) %>%
+  summarise(variants = list(unique(variant_id))) %>%
+  deframe()
+
+p.venn_variants <- 
+  ggvenn(mutserve_list)
+
+p.venn_variants
+
+
+ggsave(
+  plot = p.venn_variants,
+  filename = "../pipeline-umi-amplicon/out/venn_variants.jpeg", 
+  dpi = 600,
+  width = 12, 
+  height = 9
+)
+```
+## Venn alternative
+```{r}
+
+mutserve_list <- mutserve %>%
+  mutate(variant_id = paste(Position, Reference, Variant, sep = "_")) %>%
+  group_by(method) %>%
+  summarise(variants = list(unique(variant_id))) %>%
+  deframe()
+
+jpeg("../pipeline-umi-amplicon/out/UpSetplot.jpeg", width = 12, height = 9, units = "in", res = 600)
+UpSetR::upset(
+  fromList(mutserve_list), 
+  nsets = 4, 
+  nintersects = NA, 
+  order.by = "freq", 
+  text.scale = 2   # careful: 20 is way too large for export
+)
+dev.off()
+```
+## Complex Upset
+```{r}
+mutserve_binary <- mutserve_wide %>%
+  select(
+    `umi-pipeline-nf (POA-based)`,
+    `umi-pipeline-nf (Reference-based)`, 
+    `ONT pipeline-umi-amplicon (default)`, 
+    `vntr-calling-nf (default)`, 
+  ) %>% 
+  mutate(across(where(is.numeric),function(variant_level) ifelse(variant_level > 0, TRUE, FALSE)))
+
+names <- names(mutserve_binary)
+
+p.UpSetplot <-
+  ComplexUpset::upset(
+    mutserve_binary,
+    names, 
+    name = "",
+    set_sizes = FALSE, 
+    height_ratio = 0.2, 
+    themes = upset_default_themes(
+      text=element_text(color='black', size = 20), 
+    ),
+    base_annotations = list(
+      'Intersection size' = intersection_size(
+        counts = TRUE, 
+        text = list(
+          hjust = 0.5, 
+          size = 7
+        )
+      ) +
+        # ylab("Variants [n]") +
+        annotate(
+          geom = 'text', 
+          x = Inf,
+          y = Inf,
+          label = paste('Total:', nrow(mutserve_binary)),
+          vjust = 1, 
+          hjust = 1, 
+          size = 7
+        ) +
+        theme(
+          text = element_text(size = 20, color = "black"),
+          axis.text = element_text(color = "black"),
+          axis.title.y = element_blank()
+        )
+    )
+  ) + 
+  theme_bw(base_size = 20) +
+  theme(
+    text = element_text(size = 20, color = "black"),
+    axis.text = element_text(colour = "black"),
+    axis.text.x = element_blank(),      # remove x labels
+    axis.ticks.x = element_blank(),     # remove x ticks
+    axis.title.y = element_blank()
+  )
+
+p.UpSetplot
+
+
+ggsave(
+  plot = p.UpSetplot,
+  filename = "../pipeline-umi-amplicon/out/UpSetplot_ggplot.jpeg", 
+  dpi = 600,
+  width = 9, 
+  height = 10
+)
+
+```
+
+# variant level scatter
+```{r}
+mutserve %>% 
+  ggplot(aes(Position, `Variant-level`, color = method)) +
+  geom_point() 
+
+```
+# variant levels correlation 
+```{r}
+make_scatter <- function(data, x, y) {
+  # Fit model
+  lm_fit <- lm(data[[y]] ~ data[[x]])
+  r2 <- summary(lm_fit)$r.squared
+  r2_label <- paste0("R² = ", round(r2, 3))
+  
+  ggplot(data, aes(x = .data[[x]], y = .data[[y]])) +
+    geom_point() +
+    geom_smooth(method = "lm", se = TRUE, color = "blue") +
+    geom_abline(linetype = "dashed", color = "red") +
+    annotate("text",
+             x = 0, y = 0.9,
+             label = r2_label,
+             hjust = 0.1, vjust = -1.1,
+             size = 5, color = "black") +
+    theme_bw(base_size = 14) +
+    theme(
+      text = element_text(size = 14, color = "black"),
+      axis.text = element_text(color = "black")
+    )
+}
+
+
+p1 <-
+  make_scatter(
+    mutserve_wide, 
+    x = "umi-pipeline-nf (POA-based)", 
+    y = "umi-pipeline-nf (Reference-based)"
+  )
+
+p2 <- 
+  make_scatter(
+    mutserve_wide, 
+    x = "umi-pipeline-nf (POA-based)", 
+    y = "ONT pipeline-umi-amplicon (default)"
+  )
+
+p3 <- 
+  make_scatter(
+    mutserve_wide, 
+    x = "umi-pipeline-nf (POA-based)", 
+    y = "vntr-calling-nf (default)"
+  )
+
+p4 <- 
+  make_scatter(
+    mutserve_wide, 
+    x = "umi-pipeline-nf (Reference-based)",
+    y = "ONT pipeline-umi-amplicon (default)"
+  )
+
+p5 <- 
+  make_scatter(
+    mutserve_wide, 
+    x = "umi-pipeline-nf (Reference-based)",
+    y = "vntr-calling-nf (default)"
+  )
+
+p6 <- 
+  make_scatter(
+    mutserve_wide, 
+    x = "vntr-calling-nf (default)",
+    y = "ONT pipeline-umi-amplicon (default)"
+  )
+
+design_scatter <- "AB\nCD\nEF"
+pw.scatter_variant_level <-
+  wrap_plots(
+    A = p1, 
+    B = p2, 
+    C = p3, 
+    D = p4,
+    E = p5, 
+    F = p6, 
+    design = design_scatter
+  ) +
+  plot_annotation(tag_levels = 'A')
+
+
+ggsave(
+  plot = pw.scatter_variant_level,
+  filename = "../pipeline-umi-amplicon/out/scatter_variant_level.jpeg", 
+  dpi = 600,
+  width = 210, 
+  height = 260, 
+  units = "mm"
+)
+```
+

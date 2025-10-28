@@ -67,7 +67,8 @@ trace_data <-
 # Parse tables
 ```{r}
 # Parse start and complete times and calculate duration
-trace_data_parsed <- trace_data
+trace_data_parsed <- trace_data %>% 
+  filter(sample_num < 192)
 ```
 
 # Runtime per process
@@ -320,98 +321,196 @@ doc_runtime_combined <- read_docx() %>%
 print(doc_runtime_combined, target = "../scalability/out/SuppTable_runtime_combined.docx")
 ```
 
-## Plots
-```{r}
-# Plot 1: total runtime
-p_total_runtime_facet <- 
-  total_runtime %>% 
-  ggplot(aes(
-    x = as.factor(sample_num), 
-    y = total_runtime_sec, 
-    group = mode
-  )) +
-  geom_bar(
-    stat = "identity", 
-    position = "dodge"
-  ) +
-  facet_wrap(
-    vars(polishing), scales = "free",
-  ) +
-  labs(
-    x = "Samples [n]", 
-    y = "Total\nRuntime [s]", 
-    fill = "Mode"
-  ) +
-  theme_bw() +
-  theme(
-    text = element_text(size = 20, colour = "black"),
-    axis.text = element_text(colour = "black"),
-  )
 
-# Plot 2: normalized runtime
-p_normalized_runtime_facet <- 
-  total_runtime %>% 
-  ggplot(
-    aes(
-      x = as.factor(sample_num), 
-      y = total_runtime_sec_normalized, 
-      group = mode
+### Predict missing datapoints 
+```{r}
+# --- Predict missing sample sizes up to 192 ---
+
+# Define all target sample sizes up to 192
+all_samples <- data.frame(sample_num = c(1, 5, 10, 20, 50, 96))
+
+predicted_missing <- total_runtime %>%
+  group_by(polishing, mode) %>%
+  group_modify(~ {
+    present <- unique(.x$sample_num)
+    missing <- setdiff(all_samples$sample_num, present)
+    if (length(missing) == 0) return(tibble())
+    
+    fit <- lm(log(total_runtime_sec) ~ log(sample_num), data = .x)
+    preds <- predict(fit, newdata = data.frame(sample_num = missing), interval = "confidence")
+    
+    tibble(
+      sample_num = missing,
+      total_runtime_sec = exp(preds[, "fit"]),
+      lwr = exp(preds[, "lwr"]),
+      upr = exp(preds[, "upr"]),
+      estimate = coef(fit)[["log(sample_num)"]],
+      type = "Predicted"
     )
-  ) +
-  geom_point(
-    position = "dodge", 
-    size = 3
-  ) +
-  facet_wrap(
-    vars(polishing), 
-  ) +
-  labs(
-    x = "Samples [n]", 
-    y = "Normalized\nRuntime [s]", 
-    color = "Mode"
-  ) +
-  theme_bw() +
-  theme(
-    text = element_text(size = 20, colour = "black"),
-    axis.text = element_text(colour = "black"), 
+  }) %>%
+  ungroup()
+
+# Label observed data
+observed <- total_runtime %>%
+  select(polishing, mode, sample_num, total_runtime_sec, condition_order) %>%
+  mutate(type = "Observed")
+
+# Combine observed + predicted
+runtime_complete <- bind_rows(observed, predicted_missing)
+
+
+n_cluster <- 
+  total_runtime %>% 
+  select(polishing, sample_num, n) %>% 
+  distinct()
+
+# Recompute normalized runtime for observed + predicted
+runtime_complete_norm <- runtime_complete %>%
+  group_by(polishing, mode, sample_num) %>%
+  left_join(n_cluster) %>%
+  mutate(
+    total_runtime_sec_normalized = total_runtime_sec / n
+  ) %>%
+  ungroup()
+
+
+# ---- Table of predictions ----
+table_runtime_complete <- runtime_complete_norm %>%
+  arrange(polishing, mode, sample_num) %>%
+  mutate(
+    total_runtime_sec = round(total_runtime_sec, 2),
+    total_runtime_sec_normalized = round(total_runtime_sec_normalized, 2)
+  ) %>%
+  select(
+    Polishing = polishing,
+    Mode = mode,
+    `Samples [n]` = sample_num,
+    `Clusters [n]` = n,
+    `Type` = type,
+    `Total Runtime [s]` = total_runtime_sec,
+    `Normalized Runtime [s/task]` = total_runtime_sec_normalized
   )
+
+publication_table_runtime_complete <- flextable(table_runtime_complete) %>%
+  theme_booktabs() %>%
+  autofit() %>%
+  set_caption("Observed and predicted total and normalized pipeline runtime per configuration") %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>%
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5)) %>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Save to Word
+doc_runtime_complete <- read_docx() %>%
+  body_add_flextable(publication_table_runtime_complete)
+
+print(doc_runtime_complete, target = "../scalability/out/SuppTable_runtime_combined_complete.docx")
 ```
 
 
-### patchwork
-```{r}
-design_runtime_facet <- "AB"
-
-# Combine with patchwork, label A/B
-pw_runtime_facet <- 
-  wrap_plots(
-    A = p_total_runtime_facet, 
-    B = p_normalized_runtime_facet, 
-    design = design_runtime_facet
-  ) +
-  plot_annotation(
-    tag_levels = "A",
-  ) +
-  plot_layout(
-    axes = "collect",
-    guides = "collect"
-  )
-
-pw_runtime_facet
-
-```
-
-## Plots - not faceted
+### Complete
 ```{r}
 colors <- 
   c(
-    "CPU POA-based" = "#4DBBD5",
-    "GPU POA-based" = "#E64B35",
+    "CPU POA-based" = "#E64B35",
+    "GPU POA-based" = "#4DBBD5",
     "CPU Reference-based" = "#00A087",
     "GPU Reference-based" = "#3C5488"
   )
 
+# ---- Plot observed + predicted ----
+p_runtime_complete <- runtime_complete %>%
+  ggplot(aes(
+    x = sample_num,
+    y = total_runtime_sec,
+    color = paste(mode, polishing),
+    shape = type
+  )) +
+  geom_point(size = 3) +
+  geom_line(aes(linetype = type)) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    x = "Samples [n]",
+    y = "Total Runtime [s]",
+    color = "Condition",
+    shape = "Data type",
+    linetype = "Data type"
+  ) +
+  theme_bw(base_size = 20) +
+  scale_color_manual(values = colors) +
+  theme(
+    text = element_text(size = 20, colour = "black"),
+    axis.text = element_text(colour = "black")
+  ) +
+  guides(
+    color = guide_legend(nrow = 2, byrow = TRUE),   # legend for color in 2 rows
+    shape = guide_legend(nrow = 2, byrow = TRUE),   # optional if you want shape legend also in 2 rows
+    linetype = guide_legend(nrow = 2, byrow = TRUE) # optional if you want linetype legend also in 2 rows
+  )
 
+ggsave(
+  plot = p_runtime_complete,
+  filename = "p_runtime_complete.jpeg",
+  path = "../scalability/out/",
+  width = 12, height = 9, dpi = 600
+)
+
+```
+### normalized
+```{r}
+
+# --- Normalized runtime with complete values (observed + predicted) ---
+
+
+# Plot normalized runtime with observed + predicted
+p_normalized_runtime_no_facet_complete <- 
+  runtime_complete_norm %>%
+  ggplot(aes(
+    x = as.factor(sample_num),
+    y = total_runtime_sec_normalized,
+    fill = reorder(paste(mode, polishing), condition_order),
+  )) +
+  geom_bar(
+    stat = "identity",
+    position = "dodge", 
+    show.legend = FALSE
+  ) +
+  scale_y_continuous(labels = comma, trans = "log10") +
+  labs(
+    x = "Samples [n]",
+    y = "Normalized Runtime [s]",
+    fill = "Condition"
+  ) +
+  scale_fill_manual(values = colors) +
+  theme_bw(base_size = 20) +
+  theme(
+    text = element_text(size = 20, colour = "black"),
+    axis.text = element_text(colour = "black")
+  )
+
+p_normalized_runtime_no_facet_complete
+
+# Save
+ggsave(
+  plot = p_normalized_runtime_no_facet_complete,
+  filename = "p_normalized_runtime_no_facet_complete.jpeg",
+  path = "../scalability/out/",
+  height = 9,
+  width = 12,
+  dpi = 600
+)
+
+```
+
+## Plots
+
+## Plots - not faceted
+```{r}
 p_total_runtime_no_facet <- 
   total_runtime %>% 
   ggplot(aes(
@@ -423,14 +522,6 @@ p_total_runtime_no_facet <-
     stat = "identity", 
     position = "dodge"
   )  + 
-  # add text with number of processes per panel
-  # geom_text(
-  #   aes(
-  #     y = max(total_runtime_sec) * 1.1,
-  #     label = n
-  #   ),
-  #   size = 6
-  # ) +
   scale_y_continuous(
     labels = comma,
     expand = expansion(mult = c(0, 0.08))  # 20% extra space at the top
@@ -464,6 +555,7 @@ p_normalized_runtime_no_facet <-
     y = "Normalized Runtime [s]",
     fill = "Condition"
   ) +
+  scale_fill_manual(values = colors) +
   theme_bw() +
   theme(
     text = element_text(size = 20, colour = "black"),
@@ -478,8 +570,8 @@ design_runtime_no_facet <- "AB"
 # Combine with patchwork, label A/B
 pw_runtime_no_facet <- 
   wrap_plots(
-    A = p_total_runtime_no_facet, 
-    B = p_normalized_runtime_no_facet, 
+    A = p_runtime_complete, 
+    B = p_normalized_runtime_no_facet_complete, 
     design = design_runtime_no_facet
   ) +
   plot_annotation(
@@ -510,14 +602,14 @@ ggsave(
 ## scatter plot
 ```{r}
 p_total_runtime_scatter <-
-total_runtime %>% 
+  total_runtime %>% 
   ggplot(aes(
     x = sample_num,
     y = total_runtime_sec,
-    color = paste(mode, polishing ),
+    color = reorder(paste(mode, polishing), condition_order),
   )) +
-  geom_point()  + 
-  geom_smooth(method = "lm", se = FALSE) +
+  geom_point(show.legend = FALSE)  + 
+  geom_smooth(method = "lm", se = FALSE, show.legend = FALSE) +
   scale_y_continuous(
     labels = comma,
   ) +
@@ -526,6 +618,7 @@ total_runtime %>%
     y = "Total Runtime [s]",
     color = "Condition"
   ) +
+  scale_color_manual(values = colors) +
   theme_bw() +
   theme(
     text = element_text(size = 20, colour = "black"),
@@ -533,6 +626,7 @@ total_runtime %>%
     legend.position = "bottom"
   )
 
+p_total_runtime_scatter
 
 ggsave(
   plot = p_total_runtime_scatter, 
@@ -572,7 +666,7 @@ total_runtime %>%
 design_runtime_no_facet <- "AB"
 
 # Combine with patchwork, label A/B
-# pw_runtime_no_facet <- 
+pw_runtime_no_facet_scatter <-
   wrap_plots(
     A = p_total_runtime_scatter, 
     B = p_normalized_runtime_no_facet, 
@@ -584,18 +678,19 @@ design_runtime_no_facet <- "AB"
   plot_layout(
     axes = "collect",
     guides = "collect"
-  ) &
+  ) +
+  guides(color = guide_legend(override.aes = list(shape = 15))) &
   theme(
     legend.position = "bottom", 
     axis.text.y = element_text(angle = 90, hjust = 0.5)
   )
 
-pw_runtime_no_facet
+pw_runtime_no_facet_scatter
 
 
 ggsave(
-  plot = pw_runtime_no_facet, 
-  filename = "pw_runtime_no_facet.jpeg", 
+  plot = pw_runtime_no_facet_scatter, 
+  filename = "pw_runtime_no_facet_scatter.jpeg", 
   path = "../scalability/out/",
   height = 9, 
   width = 12, 
