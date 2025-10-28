@@ -1,8 +1,9 @@
-# umi-pipeline-nf: A GPU-accelerated, modular and scalable workflow for UMI-tagged nanopore amplicon analysis with real-time sequencing integration
+# Umi-pipeline-nf: A modular and scalable workflow for UMI-tagged nanopore amplicon analysis with real-time sequencing integration and GPU-acceleration
 
 This repository contains all scripts, configuration files, and benchmarking resources used in the study:
 
-**"umi-pipeline-nf: A GPU-accelerated, modular and scalable workflow for UMI-tagged nanopore amplicon analysis with real-time sequencing integration"**
+**"Umi-pipeline-nf: A modular and scalable workflow for UMI-tagged nanopore amplicon analysis with real-time sequencing integration and GPU-acceleration
+"**
 
 ---
 
