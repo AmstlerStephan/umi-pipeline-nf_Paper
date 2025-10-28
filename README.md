@@ -23,7 +23,7 @@ pipelines/
 ## 🧬 HG00653 Dataset (1000 Genomes Project)
 
 - **Sample:** HG00653 (from MGP00017 DNA panel)
-- **Raw reads:** The raw reads are available in the ENA database under accession PRJEB73509.
+- **Raw reads:** The raw reads are available in the ENA database under accession [PRJEB73509](https://www.ebi.ac.uk/ena/browser/view/PRJEB73509).
 - **Basecalling:** `dorado` with model `400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0`
 - **Pipeline:** `umi-pipeline-nf` in both POA- and reference-based configurations (GPU-mode)
 - **Scripts Location:**  
@@ -35,7 +35,7 @@ pipelines/
 ## 🧬 Scalability (1000 Genomes Project)
 
 - **Samples:** Up to 96 samples from diverse populations
-- **Raw reads:** The raw reads are available in the ENA database under accession PRJEB73509.
+- **Raw reads:** The raw reads are available in the ENA database under accession [PRJEB73509](https://www.ebi.ac.uk/ena/browser/view/PRJEB73509).
 - **Basecalling:** `dorado` with model `400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0`
 - **Pipeline:** `umi-pipeline-nf` in both POA- and reference-based configurations (GPU-mode)
 - **Scripts Location:**  
@@ -46,6 +46,7 @@ pipelines/
 ## 🦠 ZymoBIOMICS Dataset (Benchmarking Against longread_umi)
 
 - **Data:** UMI-tagged ONT reads of ZymoBIOMICS microbial community (MinION R10 flowcell)
+- **Data Download:** ENA database [ERR3813594](https://www.ebi.ac.uk/ena/browser/view/ERR3813594)
 - **Basecalling:** `guppy v3.4.4` (HAC model)
 - **Preprocessing:** FASTQ splitting using `seqkit v2.10.0`
 - **Pipeline:** `umi-pipeline-nf` in POA-based and reference-based GPU-mode
