@@ -13,7 +13,9 @@ pipelines/
 ├── umi-pipeline-nf/
 │   └── benchmarking/           # Scripts, configs, and commands for HG00653 sample analysis
 ├── karst/                      # Scripts for benchmarking against longread_umi using Zymo data
-└── consequmi/                  # Scripts for benchmarking against ConSeqUMI using SARS-CoV-2 data
+├── consequmi/                  # Scripts for benchmarking against ConSeqUMI using SARS-CoV-2 data
+├── pipeline-umi-amplicon/      # Scripts for benchmarking against pipeline-umi-amplicon using HG00653
+└── scalability/                # Scripts and data for scalability of umi-pipeline-nf across increasing sample sizes
 ```
 
 ---
@@ -21,10 +23,23 @@ pipelines/
 ## 🧬 HG00653 Dataset (1000 Genomes Project)
 
 - **Sample:** HG00653 (from MGP00017 DNA panel)
+- **Raw reads:** The raw reads are available in the ENA database under accession PRJEB73509.
 - **Basecalling:** `dorado` with model `400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0`
 - **Pipeline:** `umi-pipeline-nf` in both POA- and reference-based configurations (GPU-mode)
 - **Scripts Location:**  
   [`pipelines/umi-pipeline-nf/benchmarking`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipelines/umi-pipeline-nf/benchmarking)
+- The same sample was used for benchmarking against pipeline-umi-amplicon: [`pipelines/pipeline-umi-amplicon`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipelines/pipeline-umi-amplicon)
+
+---
+
+## 🧬 Scalability (1000 Genomes Project)
+
+- **Samples:** Up to 96 samples from diverse populations
+- **Raw reads:** The raw reads are available in the ENA database under accession PRJEB73509.
+- **Basecalling:** `dorado` with model `400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0`
+- **Pipeline:** `umi-pipeline-nf` in both POA- and reference-based configurations (GPU-mode)
+- **Scripts Location:**  
+  [`pipelines/umi-pipeline-nf/scalability`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipelines/umi-pipeline-nf/scalability)
 
 ---
 
