@@ -1,0 +1,3 @@
+cluster_id	cluster_written	reads_found	reads_found_fwd	reads_found_rev	reads_written_fwd	reads_written_rev	reads_skipped_fwd	reads_skipped_rev
+68_sub0	1	7	4	3	4	3	0	0
+903_sub0	1	6	4	2	4	2	0	0

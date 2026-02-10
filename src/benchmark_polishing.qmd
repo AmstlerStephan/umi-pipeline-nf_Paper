@@ -4,6 +4,34 @@ format: html
 editor: visual
 ---
 
+```{r setup-colors, include=FALSE}
+# Define consistent color schemes across all plots
+
+condition_colors <- c(
+  "Reference-based CPU" = "#E41A1C",  # red
+  "Reference-based GPU" = "#377EB8",  # blue
+  "POA-based CPU"        = "#4DAF4A",  # green
+  "POA-based GPU"        = "#984EA3"   # purple
+)
+
+reads_palette <- c(
+  "10" = "#E69F00",
+  "20" = "#56B4E9",
+  "30" = "#009E73",
+  "50" = "#F0E442"
+)
+
+add_consistent_colors <- function(aesthetic = "fill", var = "condition") {
+  if (var == "condition") {
+    if (aesthetic == "fill") return(scale_fill_manual(values = condition_colors))
+    else return(scale_color_manual(values = condition_colors))
+  } else if (var == "reads") {
+    if (aesthetic == "fill") return(scale_fill_manual(values = reads_palette))
+    else return(scale_color_manual(values = reads_palette))
+  }
+}
+```
+
 # libraries
 
 ```{r}
@@ -15,6 +43,7 @@ library(scales)
 library(officer)
 library(patchwork)
 library(ggsci)
+library(ggh4x)
 ```
 
 # functions
@@ -102,21 +131,21 @@ convert_to_mb <- function(x) {
 
 ```{r}
 trace_file_paths <- list.files(
-  path = "../benchmarking/out/nextflow_stats/", 
+  path = "benchmarking/data/nextflow_stats/", 
   pattern = "trace.txt", 
   recursive = TRUE, 
   full.names = TRUE
 )
 
 mutserve_file_paths <- list.files(
-  path = "../benchmarking/out/mutserve/", 
+  path = "benchmarking/data/mutserve/", 
   pattern = "consensus_parsed.txt", 
   recursive = TRUE, 
   full.names = TRUE
 )
 
 glued_cluster_sizes_paths <- list.files(
-  path = "../benchmarking/out/glued_cluster_sizes/", 
+  path = "benchmarking/data/glued_cluster_sizes/", 
   pattern = "glued_cluster_sizes.tsv", 
   recursive = TRUE, 
   full.names = TRUE
@@ -257,14 +286,14 @@ pipeline_duration <-
   )
 
 
-write_tsv(pipeline_duration, file = "../benchmarking/out/pipeline_duration.tsv")
+write_tsv(pipeline_duration, file = "benchmarking/out/pipeline_duration.tsv")
 ```
 
 ## Execution reduction per condition - GPU reference based
 
 ```{r}
 reference_gpu <- duration_summary_per_polishing %>%
-  filter(polishing == "Reference-based" & mode == "gpu") %>%
+  filter(polishing == "POA-based" & mode == "CPU") %>%
   select(
     cluster_per_polishing_file, 
     max_reads_per_cluster, 
@@ -276,15 +305,19 @@ reference_gpu <- duration_summary_per_polishing %>%
 duration_comparison_gpu <- duration_summary_per_polishing %>%
   left_join(reference_gpu, by = c("cluster_per_polishing_file", "max_reads_per_cluster")) %>%
   mutate(
-    x_fold_reduction_median = total_median_duration / reference_median,
-    x_fold_reduction_mean = total_mean_duration / reference_mean,
+    x_fold_reduction_median = reference_median / total_median_duration,
+    x_fold_reduction_mean = reference_mean / total_mean_duration,
   )
 ```
 
 ### Table
 
 ```{r}
-table_data_duration_comparison_gpu <- duration_comparison_gpu %>%
+table_data_duration_comparison_gpu <- 
+  duration_comparison_gpu %>%
+  arrange(
+    cluster_per_polishing_file, max_reads_per_cluster
+  ) %>% 
   mutate(
     total_mean_duration = round(total_mean_duration, 1),
     reference_mean = round(reference_mean, 1),
@@ -295,15 +328,15 @@ table_data_duration_comparison_gpu <- duration_comparison_gpu %>%
     Mode = mode,
     `Clusters/File` = cluster_per_polishing_file,
     `Max Reads/Cluster` = max_reads_per_cluster,
-    `Mean Duration (s)` = total_mean_duration,
-    `GPU Reference (s)` = reference_mean,
-    `x-Fold Slower` = x_fold_reduction_mean
+    `Mean Duration [s]` = total_mean_duration,
+    `CPU POA [s]` = reference_mean,
+    `x-Fold Faster` = x_fold_reduction_mean
   )
 
 publication_table_duration_comparison_gpu <- flextable(table_data_duration_comparison_gpu) %>%
   theme_booktabs() %>%
   autofit() %>%
-  set_caption("Mean durations and x-fold slowdown compared to GPU Reference-based polishing.") %>%
+  set_caption("Mean durations and x-fold speed-up compared to CPU POA-based polishing.") %>%
   align(align = "center", part = "all") %>%
   bold(part = "header") %>%
   fontsize(size = 11, part = "all") %>%
@@ -317,9 +350,9 @@ publication_table_duration_comparison_gpu <- flextable(table_data_duration_compa
 
 doc_duration_comparison_gpu <- read_docx() %>%
   body_add_flextable(publication_table_duration_comparison_gpu) %>%
-  body_add_par("*Note: x-Fold Slower is relative to GPU runtime at same configuration.", style = "Normal")
+  body_add_par("*Note: x-Fold Faster is relative to CPU runtime at same configuration.", style = "Normal")
 
-print(doc_duration_comparison_gpu, target = "../benchmarking/out/SuppTable_duration_comparison_gpu.docx")
+print(doc_duration_comparison_gpu, target = "benchmarking/out/SuppTable_duration_comparison_gpu.docx")
 
 ```
 
@@ -327,7 +360,7 @@ print(doc_duration_comparison_gpu, target = "../benchmarking/out/SuppTable_durat
 
 ```{r}
 reference_cpu <- duration_summary_per_polishing %>%
-  filter(polishing == "Reference-based" & mode == "cpu") %>%
+  filter(polishing == "POA-based" & mode == "CPU") %>%
   select(
     cluster_per_polishing_file, 
     max_reads_per_cluster, 
@@ -337,18 +370,22 @@ reference_cpu <- duration_summary_per_polishing %>%
 
 # Step 3: Join and compute x-fold reduction
 duration_comparison_cpu <- duration_summary_per_polishing %>%
-  filter(mode == "cpu") %>% 
+  filter(mode == "CPU") %>% 
   left_join(reference_cpu, by = c("cluster_per_polishing_file", "max_reads_per_cluster")) %>%
   mutate(
-    x_fold_reduction_median = total_median_duration / reference_median,
-    x_fold_reduction_mean = total_mean_duration / reference_mean,
+    x_fold_reduction_median = reference_median / total_median_duration,
+    x_fold_reduction_mean = reference_mean / total_mean_duration ,
   )
 ```
 
 ### Table
 
 ```{r}
-table_data_duration_comparison_cpu <- duration_comparison_cpu %>%
+table_data_duration_comparison_cpu <-
+  duration_comparison_cpu %>%
+  arrange(
+    cluster_per_polishing_file, max_reads_per_cluster
+  ) %>% 
   mutate(
     total_mean_duration = round(total_mean_duration, 1),
     reference_mean = round(reference_mean, 1),
@@ -359,15 +396,15 @@ table_data_duration_comparison_cpu <- duration_comparison_cpu %>%
     Mode = mode,
     `Clusters/File` = cluster_per_polishing_file,
     `Max Reads/Cluster` = max_reads_per_cluster,
-    `Mean Duration (s)` = total_mean_duration,
-    `CPU Reference (s)` = reference_mean,
-    `x-Fold Slower` = x_fold_reduction_mean
+    `Mean Duration [s]` = total_mean_duration,
+    `CPU Reference [s]` = reference_mean,
+    `x-Fold speed-up` = x_fold_reduction_mean
   )
 
 publication_table_duration_comparison_cpu <- flextable(table_data_duration_comparison_cpu) %>%
   theme_booktabs() %>%
   autofit() %>%
-  set_caption("Mean durations and x-fold slowdown compared to CPU Reference-based polishing.") %>%
+  set_caption("Mean durations and x-fold speed-up compared to CPU POA-based polishing.") %>%
   align(align = "center", part = "all") %>%
   bold(part = "header") %>%
   fontsize(size = 11, part = "all") %>%
@@ -375,17 +412,16 @@ publication_table_duration_comparison_cpu <- flextable(table_data_duration_compa
   theme_zebra() %>%
   border_remove() %>%
   border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%  
-  border_inner_v(border = fp_border(color = "grey60", width = 0.5))%>%
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5)) %>%
   border_inner_h(border = fp_border(color = "grey60", width = 0.5)) 
 
 doc_duration_comparison_cpu <- read_docx() %>%
   body_add_flextable(publication_table_duration_comparison_cpu) %>%
-  body_add_par("*Note: x-Fold Slower is relative to CPU runtime at same configuration.", style = "Normal")
+  body_add_par("*Note: x-Fold speed-up is relative to CPU runtime at same configuration.", style = "Normal")
 
-print(doc_duration_comparison_cpu, target = "../benchmarking/out/SuppTable_duration_comparison_cpu.docx")
+print(doc_duration_comparison_cpu, target = "benchmarking/out/SuppTable_duration_comparison_cpu.docx")
 
 ```
-
 
 ## variant calling - mutserve
 
@@ -393,7 +429,12 @@ print(doc_duration_comparison_cpu, target = "../benchmarking/out/SuppTable_durat
 mutserve_files_filtered <- 
   mutserve_files %>% 
   filter(max_reads_per_cluster <= 50) %>% 
-  filter(cluster_per_polishing_file <= 50)
+  filter(cluster_per_polishing_file <= 50) %>% 
+  mutate(
+    mode = ifelse(mode == "cpu", "CPU", "GPU"), 
+    polishing = ifelse(polishing == "reference", "Ref.-based", "POA-based"), 
+    
+  )
 
 mutserve_variant_calling_summary <- 
   mutserve_files_filtered %>% 
@@ -410,6 +451,9 @@ mutserve_variant_calling_summary <-
 
 ```{r}
 table_data_mutserve_variant_calling_summary <- mutserve_variant_calling_summary %>%
+  arrange(
+    cluster_per_polishing_file, max_reads_per_cluster
+  ) %>% 
   mutate(
     mean_variant_level = round(mean_variant_level * 100, 3),
     sd_variant_level = round(sd_variant_level * 100, 3),
@@ -420,8 +464,8 @@ table_data_mutserve_variant_calling_summary <- mutserve_variant_calling_summary 
     `Clusters/File` = cluster_per_polishing_file,
     `Max Reads/Cluster` = max_reads_per_cluster,
     `Number of variants [n]` = n_variants,
-    `Mean Variant Level (%)` = mean_variant_level,
-    `SD Variant Level (%)` = sd_variant_level
+    `Mean Variant Level [%]` = mean_variant_level,
+    `SD Variant Level [%]` = sd_variant_level
   )
 
 publication_table_mutserve_variant_calling_summary <- flextable(table_data_mutserve_variant_calling_summary) %>%
@@ -442,11 +486,12 @@ publication_table_mutserve_variant_calling_summary <- flextable(table_data_mutse
 doc_mutserve_variant_calling_summary <- read_docx() %>%
   body_add_flextable(publication_table_mutserve_variant_calling_summary)
 
-print(doc_mutserve_variant_calling_summary, target = "../benchmarking/out/SuppTable_mutserve_variant_calling_summary.docx")
+print(doc_mutserve_variant_calling_summary, target = "benchmarking/out/SuppTable_mutserve_variant_calling_summary.docx")
 
 ```
 
-## RAM consumption 
+## RAM consumption
+
 ```{r}
 # Create a clean label mapping
 condition_labels <- c(
@@ -466,6 +511,7 @@ ram_summary <- trace_files_parsed %>%
   group_by(condition, cluster_per_polishing_file, max_reads_per_cluster, polishing, mode) %>%
   summarise(
     mean_ram_mb = mean(peak_rss_mb), 
+    sd_ram_mb = sd(peak_rss_mb),
     n = n(),
     .groups = "drop"
   ) %>% 
@@ -475,14 +521,15 @@ ram_summary <- trace_files_parsed %>%
 
 # Compute baseline per cluster size (GPU + Reference-based)
 baseline_per_cluster <- ram_summary %>%
-  filter(condition == "Reference-based_CPU") %>%
+  # filter(condition == "Reference-based_CPU") %>%
+  filter(condition == "POA-based_CPU") %>%
   select(cluster_per_polishing_file, max_reads_per_cluster, baseline_ram = mean_ram_mb)
 
 # Join and compute relative RAM
 ram_summary <- ram_summary %>%
   left_join(baseline_per_cluster, by = c("cluster_per_polishing_file", "max_reads_per_cluster")) %>%
   mutate(
-    ram_relative_to_baseline = mean_ram_mb / baseline_ram
+    ram_relative_to_baseline = baseline_ram / mean_ram_mb 
   )
 
 # Apply factor with nice labels
@@ -499,10 +546,14 @@ ram_summary <- ram_summary %>%
 ```
 
 ### Table
+
 ```{r}
 
 # Prepare table data
 table_data_ram_comparison <- ram_summary %>%
+  arrange(
+    cluster_per_polishing_file, max_reads_per_cluster
+  ) %>% 
   mutate(
     mean_ram_mb = round(mean_ram_mb, 1),
     ram_relative_to_baseline = round(ram_relative_to_baseline, 2),
@@ -512,8 +563,8 @@ table_data_ram_comparison <- ram_summary %>%
     Mode = mode,
     `Clusters/File` = cluster_per_polishing_file,
     `Max Reads/Cluster` = max_reads_per_cluster,
-    `Mean RAM (MB)` = mean_ram_mb,
-    `Relative RAM*` = ram_relative_to_baseline,
+    `Mean RAM [MB]` = mean_ram_mb,
+    `Relative RAM reduction*` = ram_relative_to_baseline,
   )
 
 # Create publication-ready flextable
@@ -534,17 +585,18 @@ publication_table_ram_comparison <- flextable(table_data_ram_comparison) %>%
 # Export to Word
 doc_ram_comparison <- read_docx() %>%
   body_add_flextable(publication_table_ram_comparison) %>%
-  body_add_par("*Note: Relative RAM is normalized to Reference-based CPU for the same configuration.", style = "Normal")
+  body_add_par("*Note: Relative RAM is normalized to POA-based CPU for the same configuration.", style = "Normal")
 
-print(doc_ram_comparison, target = "../benchmarking/out/SuppTable_ram_comparison.docx")
+print(doc_ram_comparison, target = "benchmarking/out/SuppTable_ram_comparison.docx")
 
 ```
-
 
 # plots
 
 ## Total execution time
+
 ### Create panels
+
 ```{r}
 make_panel_pipeline_duration <- function(polishing_filter, mode_filter){
   # Filter data
@@ -570,7 +622,7 @@ make_panel_pipeline_duration <- function(polishing_filter, mode_filter){
       position = "dodge"
     ) +
     facet_grid(
-      cols = vars(polishing)
+      cols = vars(polishing, mode)
     ) +
     # add text with number of processes per panel
     geom_text(
@@ -584,11 +636,11 @@ make_panel_pipeline_duration <- function(polishing_filter, mode_filter){
     scale_y_continuous(
       expand = expansion(mult = c(0, 0.08))  # 20% extra space at the top
     ) +
-    scale_fill_npg() +
+    add_consistent_colors('fill', 'condition') +
     labs(
-      x = "Cluster per polishing file",
+      x = "UMI cluster per polishing file",
       y = "Duration [s]", 
-      fill = "Max reads per cluster"
+      fill = "Max reads per UMI cluster"
     ) +
     theme_bw() +
     theme(
@@ -636,18 +688,16 @@ p.pipeline_duration_per_condition
 ggsave(
   plot = p.pipeline_duration_per_condition,
   filename = "pipeline_duration_per_condition.jpeg", 
-  path = "../benchmarking/out/",
+  path = "benchmarking/out/",
   width = 12, 
   height = 12
 )
 ```
 
-
-
-
 ## RAM consumption
 
 ### Create Panels
+
 ```{r}
 make_panel_ram_consumption <- function(polishing_filter, mode_filter){
   trace_files_parsed %>% 
@@ -669,16 +719,17 @@ make_panel_ram_consumption <- function(polishing_filter, mode_filter){
     facet_grid(
       cols = vars(reorder(process, process_order))
     ) +
-    scale_fill_npg() +
+    add_consistent_colors('fill', 'condition') +
     labs(
-      x = "Cluster per polishing file",
+      x = "UMI cluster per polishing file",
       y = "RAM consumption [MB]", 
-      fill = "Max reads per cluster"
+      fill = "Max reads per UMI cluster"
     ) +
     theme_bw() +
     theme(
       axis.text = element_text(colour = "black"),
       text = element_text(size = 20, colour = "black"),
+      legend.text = element_text(size = 20, colour = "black"),
       legend.position = "bottom"
     )
 }
@@ -690,6 +741,7 @@ p.ram_consumption_poa_cpu <- make_panel_ram_consumption("POA-based", "CPU")
 ```
 
 #### patchwork
+
 ```{r}
 design_ram_consumption <- "AA\nBB\nCD"
 
@@ -717,7 +769,7 @@ p.ram_consumption_per_condition
 ggsave(
   plot = p.ram_consumption_per_condition,
   filename = "ram_consumption_per_condition.jpeg", 
-  path = "../benchmarking/out/",
+  path = "benchmarking/out/",
   width = 12, 
   height = 9
 )
@@ -725,7 +777,9 @@ ggsave(
 ```
 
 ## RAM consumption - barplots
+
 ### Create Panels
+
 ```{r}
 make_panel <- function(cluster_size) {
   annotation <- ram_summary %>% 
@@ -736,8 +790,8 @@ make_panel <- function(cluster_size) {
   ram_summary %>% 
     filter(cluster_per_polishing_file == cluster_size) %>%
     ggplot(aes(
-      x = condition,
-      y = ram_relative_to_baseline,
+      x = reorder(condition, mean_ram_mb, decreasing = TRUE),
+      y = mean_ram_mb,
       fill = max_reads_per_cluster
     )) +
     geom_bar(stat = "identity", position = position_dodge()) + 
@@ -745,17 +799,22 @@ make_panel <- function(cluster_size) {
     annotate(
       geom = "text",
       label = paste("n =", annotation), 
-      x = 1, y = 30, size = 6
+      x = 1, y = 4, size = 6
     ) +
-    coord_cartesian(ylim = c(0, 30)) +
-    scale_y_continuous(breaks = seq(0, 30, 5)) +
+    # geom_hline(yintercept = 1, linetype='dotted', col = 'grey20')+
+    # annotate("text", x = "POA-based CPU", y = 1, label = "POA-based CPU", vjust = -0.5) +
+    # coord_cartesian(ylim = c(0, 30)) +
+    scale_y_continuous(
+      breaks = seq(0, 5, 0.5), 
+      # expand = expansion(mult = c(0, 0.1))
+    ) +
     labs(
       x = "Condition",
-      y = "RAM consumption relative to\nCPU Reference-based",
-      fill = "Max reads per cluster"
+      y = "Mean RAM consumption",
+      fill = "Max reads per UMI cluster"
     ) +
     theme_bw() +
-    scale_fill_npg() +
+    add_consistent_colors('fill', 'condition') +
     theme(
       text = element_text(size = 20, colour = "black"),
       axis.text = element_text(colour = "black"),
@@ -795,7 +854,7 @@ p.ram_comparison
 ggsave(
   plot = p.ram_comparison,
   filename = "ram_comparison.jpeg", 
-  path = "../benchmarking/out/",
+  path = "benchmarking/out/",
   width = 12, 
   height = 9
 )
@@ -805,6 +864,7 @@ ggsave(
 ## polishing duration per condition and process
 
 ### Create panels
+
 ```{r}
 make_panel_polishing_duration_per_condition <- function(polishing_filter, mode_filter){
   # Filter data
@@ -823,17 +883,13 @@ make_panel_polishing_duration_per_condition <- function(polishing_filter, mode_f
   df %>% 
     filter(polishing == polishing_filter) %>% 
     filter(mode == mode_filter) %>% 
-    mutate(
-      cluster_per_polishing_file = as.factor(cluster_per_polishing_file),
-      max_reads_per_cluster = as.factor(max_reads_per_cluster), 
-    ) %>%
     ggplot(aes(
       x = cluster_per_polishing_file,
       y = duration,
-      fill = max_reads_per_cluster
+      fill = max_reads_per_cluster,
     )) +
-    facet_grid(
-      cols = vars(reorder(process, process_order))
+    facet_nested_wrap(
+      vars(mode, reorder(process, process_order)), nrow = 1
     ) +
     geom_boxplot(
       position = position_dodge(width = 0.8),
@@ -849,18 +905,20 @@ make_panel_polishing_duration_per_condition <- function(polishing_filter, mode_f
       size = 6
     ) +
     scale_y_continuous(
-      expand = expansion(mult = c(0, 0.08))  # 20% extra space at the top
+      expand = expansion(mult = c(0, 0.1))  # 20% extra space at the top
     ) +
-    scale_fill_npg() +
+    add_consistent_colors('fill', 'condition') +
     labs(
-      x = "Cluster per polishing file",
+      x = "UMI cluster per polishing file",
       y = "Duration [s]", 
-      fill = "Max reads per cluster"
+      fill = "Max reads per UMI cluster"
     ) +
     theme_bw() +
     theme(
       axis.text = element_text(colour = "black"),
-      text = element_text(size = 20, colour = "black")
+      text = element_text(size = 20, colour = "black"),
+      legend.text = element_text(size = 20, colour = "black"), 
+      legend.background = element_rect(fill = "white", colour = "grey80")
     )
 }
 
@@ -907,7 +965,146 @@ p.polishing_duration_per_condition
 ggsave(
   plot = p.polishing_duration_per_condition,
   filename = "polishing_duration_per_condition.jpeg", 
-  path = "../benchmarking/out/",
+  path = "benchmarking/out/",
+  dpi = 600,
+  width = 12, 
+  height = 12
+)
+```
+
+## Scatter polishing duration per condition and process
+
+### Create panels
+
+```{r}
+make_panel_polishing_duration_per_condition_scatter <- function(polishing_filter, mode_filter, method){
+  
+  trace_files_parsed %>%
+    mutate(
+      max_reads_per_cluster = as.factor(max_reads_per_cluster), 
+      cluster_per_polishing_file = as.numeric(cluster_per_polishing_file)
+    ) %>% 
+    filter(polishing == polishing_filter) %>% 
+    filter(mode == mode_filter) %>% 
+    group_by(
+      cluster_per_polishing_file, max_reads_per_cluster, process, process_order, mode, polishing
+    ) %>% 
+    summarise(
+      median_duration = median(as.numeric(duration))
+    ) %>% 
+    ggplot(aes(
+      x = cluster_per_polishing_file,
+      y = median_duration, 
+      color = max_reads_per_cluster
+    )) +
+    facet_nested(
+      cols = vars( mode, reorder(process, process_order))
+    ) +
+    geom_point(show.legend = FALSE, size = 3) +
+    geom_smooth(
+      method = method,
+      formula = y ~ poly(x, 2),
+      se = FALSE, 
+      show.legend = FALSE
+    ) +
+    add_consistent_colors('color', 'condition') +
+    labs(
+      x = "UMI cluster per polishing file",
+      y = "Duration [s]", 
+      colour = "Max reads per UMI cluster"
+    ) +
+    theme_bw() +
+    theme(
+      axis.text = element_text(colour = "black"),
+      text = element_text(size = 20, colour = "black"),
+      legend.text = element_text(size = 20, colour = "black"), 
+      legend.background = element_rect(fill = "white", colour = "grey80")
+    )
+}
+
+p.polishing_duration_per_condition_reference_cpu_scatter <- make_panel_polishing_duration_per_condition_scatter("Reference-based", "CPU", "lm")
+p.polishing_duration_per_condition_reference_gpu_scatter <- make_panel_polishing_duration_per_condition_scatter("Reference-based", "GPU", "lm") 
+p.polishing_duration_per_condition_poa_gpu_scatter <- make_panel_polishing_duration_per_condition_scatter("POA-based", "GPU", "lm") 
+p.polishing_duration_per_condition_poa_cpu_scatter <- make_panel_polishing_duration_per_condition_scatter("POA-based", "CPU", "lm")
+p.polishing_duration_per_condition_poa_gpu_scatter
+```
+
+### Patchwork
+
+```{r}
+
+design_polishing_duration_per_condition_scatter <- "A\nB\nC\nD"
+
+p.polishing_duration_per_condition_scatter <- 
+  wrap_plots(
+    A = p.polishing_duration_per_condition_poa_cpu_scatter, 
+    B = p.polishing_duration_per_condition_reference_cpu_scatter, 
+    C = p.polishing_duration_per_condition_poa_gpu_scatter, 
+    D = p.polishing_duration_per_condition_reference_gpu_scatter, 
+    design = design_polishing_duration_per_condition_scatter,
+    guides = "collect"
+  ) +
+  plot_annotation(
+    tag_levels = 'A'
+  ) +
+  plot_layout(
+    axes = "collect",
+    axis_titles = "collect",
+    guides = "collect"
+  ) &
+  theme(
+    axis.title.y = element_text(margin = margin(l = 5, r = 5)),
+    legend.position = "bottom"
+  )
+
+p.polishing_duration_per_condition_scatter
+
+ggsave(
+  plot = p.polishing_duration_per_condition_scatter,
+  filename = "polishing_duration_per_condition_scatter.jpeg", 
+  path = "benchmarking/out/",
+  dpi = 600,
+  width = 12, 
+  height = 12
+)
+
+```
+
+#### Mix plot
+
+```{r}
+design_polishing_duration_per_condition_mix <- "AB\nCC\nDE\nFF"
+
+p.polishing_duration_per_condition_mix <- 
+  wrap_plots(
+    A = p.polishing_duration_per_condition_poa_cpu,
+    B = p.polishing_duration_per_condition_poa_cpu_scatter, 
+    C = p.polishing_duration_per_condition_reference_cpu, 
+    D = p.polishing_duration_per_condition_poa_gpu,
+    E = p.polishing_duration_per_condition_poa_gpu_scatter, 
+    F = p.polishing_duration_per_condition_reference_gpu, 
+    design = design_polishing_duration_per_condition_mix,
+    guides = "collect"
+  ) +
+  plot_annotation(
+    tag_levels = 'A'
+  ) +
+  plot_layout(
+    axes = "collect",
+    axis_titles = "collect",
+    guides = "collect"
+  ) &
+  theme(
+    axis.title.y = element_text(margin = margin(l = 5, r = 5)),
+    legend.position = "bottom"
+  )
+
+p.polishing_duration_per_condition_mix
+
+ggsave(
+  plot = p.polishing_duration_per_condition_mix,
+  filename = "polishing_duration_per_condition_mix.jpeg", 
+  path = "benchmarking/out/",
   dpi = 600,
   width = 12, 
   height = 12
@@ -932,7 +1129,7 @@ p.variant_detection_changes <-
 ggsave(
   plot = p.variant_detection_changes,
   filename = "variant_detection_changes.jpeg", 
-  path = "../benchmarking/out/",
+  path = "benchmarking/out/",
   width = 12, 
   height = 9
 )
@@ -940,8 +1137,12 @@ ggsave(
 
 ```
 
-# Lunch seminar 
+# Lunch seminar
+
 ## RAM
+
+### relative
+
 ```{r}
 cluster_per_file <- 20
 reads_per_cluster <- 30
@@ -971,11 +1172,11 @@ ram_summary %>%
   ) +
   labs(
     x = "Condition",
-    y = "RAM consumption relative to\nCPU Reference-based",
+    y = "X-fold less RAM consumption\nrelative to CPU Reference-based",
     fill = "Max reads per cluster"
   ) +
   theme_bw() +
-  scale_fill_npg() +
+  add_consistent_colors('fill', 'condition') +
   theme(
     text = element_text(size = 28, colour = "black"),
     axis.text = element_text(colour = "black"),
@@ -985,7 +1186,7 @@ ram_summary %>%
 
 ggsave(
   filename = "lunch_seminar_RAM.jpeg", 
-  path = "../lunch_seminar/out/",
+  path = "lunch_seminar/out/",
   dpi = 600,
   width = 12, 
   height = 9
@@ -993,7 +1194,61 @@ ggsave(
 
 ```
 
-## Pipeline duration 
+### absolute
+
+```{r}
+cluster_per_file <- 20
+reads_per_cluster <- 30
+annotation <- ram_summary %>% 
+  filter(cluster_per_polishing_file == cluster_per_file) %>%
+  slice_head(n = 1) %>% 
+  pull(n)
+
+ram_summary %>% 
+  filter(cluster_per_polishing_file == cluster_per_file) %>%
+  filter(max_reads_per_cluster == reads_per_cluster) %>%
+  ggplot(aes(
+    x = reorder(condition, mean_ram_mb),
+    y = mean_ram_mb,
+    fill = condition
+  )) +
+  geom_bar(stat = "identity", position = position_dodge(), show.legend = FALSE) + 
+  # geom_text() +
+  annotate(
+    geom = "text",
+    label = paste("n =", annotation), 
+    x = 1, y = 4, size = 8
+  ) +
+  scale_y_continuous(
+    breaks = seq(0, 5, 0.5), 
+    expand = expansion(mult = c(0, 0.1))
+  ) +
+  labs(
+    x = "Condition",
+    y = "Mean RAM consumption",
+    fill = "Max reads per UMI cluster"
+  ) +
+  theme_bw() +
+  add_consistent_colors('fill', 'condition') +
+  theme(
+    text = element_text(size = 28, colour = "black"),
+    axis.text = element_text(colour = "black"),
+    axis.text.x = element_text(angle = 40, hjust = 1, colour = "black"),
+    legend.position = "bottom"
+  )
+
+ggsave(
+  filename = "lunch_seminar_RAM_absolute.jpeg", 
+  path = "lunch_seminar/out/",
+  dpi = 600,
+  width = 12, 
+  height = 9
+)
+
+```
+
+## Pipeline duration
+
 ```{r}
 pipeline_duration %>% 
   filter(cluster_per_polishing_file == cluster_per_file) %>%
@@ -1020,27 +1275,26 @@ pipeline_duration %>%
   scale_y_continuous(
     expand = expansion(mult = c(0, 0.08))  # 20% extra space at the top
   ) +
-  scale_fill_npg() +
+  add_consistent_colors('fill', 'condition') +
   labs(
     x = "Condition",
     y = "Duration [s]", 
     fill = "Max reads per cluster"
   ) +
   theme_bw() +
-  scale_fill_npg() +
+  add_consistent_colors('fill', 'condition') +
   theme(
     text = element_text(size = 28, colour = "black"),
     axis.text = element_text(colour = "black"),
-    axis.text.x = element_text(angle = 30, hjust = 1, colour = "black"),
+    axis.text.x = element_text(angle = 40, hjust = 1, colour = "black"),
     legend.position = "bottom"
   )
 
 ggsave(
   filename = "lunch_seminar_duration.jpeg", 
-  path = "../lunch_seminar/out/",
+  path = "lunch_seminar/out/",
   dpi = 600,
   width = 12, 
   height = 9
 )
 ```
-

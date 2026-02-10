@@ -1,0 +1,3 @@
+format	region	reads_found	reads_unmapped	reads_secondary	reads_supplementary	reads_on_target	reads_concatamer	reads_short	reads_long	reads_filtered	include_secondary
+count	lpa5104	6417	0	0	392	6025	371	748	1	4905	False
+%	lpa5104	100	0	0	6	93	6	12	0	76	False

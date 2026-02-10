@@ -1,0 +1,214 @@
+---
+title: "live_monitoring_minimal"
+format: html
+editor: visual
+---
+
+# library
+
+```{r}
+library(tidyverse)
+library(flextable)
+library(officer)
+library(patchwork)
+```
+
+# paths
+
+```{r}
+cluster_stats_paths <- list.files(
+  path =  "live/data/cluster_stats", 
+  pattern = "summary_cluster_stats.tsv", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+sample_sheet_path <- "live/data/sample_sheet/sample_sheet.tsv" 
+```
+
+# read files
+
+```{r, message=FALSE}
+cluster_stats <- lapply(cluster_stats_paths, FUN = function(path){
+  # extract timestamt "20260202_1735"
+  timestamp <- str_extract(path, "\\d{8}_\\d{4}")
+  
+  read_tsv(path) %>%
+    mutate(
+      timestamp = timestamp
+    )
+}) %>%
+  bind_rows()
+
+sample_sheet <- read_tsv(sample_sheet_path)
+```
+
+# tables
+
+## paste timestamp to date time
+
+```{r}
+starttime <- as.POSIXct(min(cluster_stats$timestamp), format = "%Y%m%d_%H%M", tz = "UTC")
+endttimte <- as.POSIXct(max(cluster_stats$timestamp), format = "%Y%m%d_%H%M", tz = "UTC")
+ 
+cluster_stats_parsed <-
+  cluster_stats %>%
+  rename(
+    barcode = sample
+  ) %>% 
+  inner_join(sample_sheet) %>% 
+  group_by(sample) %>%
+  mutate(
+    task_index_chtronological = row_number(),
+    timestamp = as.POSIXct(timestamp, format = "%Y%m%d_%H%M", tz = "UTC"),
+    runtime_hours = as.numeric(difftime(timestamp, starttime, units = "hours")), 
+    runtime_minutes = as.numeric(difftime(timestamp, starttime, units = "mins")), 
+    # name sample using group index
+  )
+
+write_tsv(cluster_stats, "live/data/cluster_stats/combined_cluster_stats.tsv")
+```
+
+## summary cluster stats at the end of sequencing
+
+```{r}
+cluster_stats_summary <-
+  cluster_stats_parsed %>%
+  group_by(sample) %>%
+  slice_tail(n = 1) %>%
+  ungroup() %>%
+  select(
+    sample,
+    n_cluster,
+    timestamp,
+    runtime_hours
+  ) %>%
+  arrange(sample)
+
+cluster_stats_summary_all <- 
+  cluster_stats_summary %>% 
+  summarise(
+    mean_clusters = mean(n_cluster),
+    median_clusters = median(n_cluster),
+    sd_clusters = sd(n_cluster),
+    min_clusters = min(n_cluster),
+    max_clusters = max(n_cluster),
+    total_clusters = sum(n_cluster),
+    total_runtime_hours = max(runtime_hours),
+    .groups = "drop"
+  )
+```
+
+### create table
+
+```{r}
+cluster_stats_table <-
+cluster_stats_parsed %>% 
+  select(
+    # task_index_chtronological,
+    # timestamp,
+    runtime_hours,
+    sample,
+    n_cluster
+  ) %>%
+  # round runtime to 1 digit
+  mutate(runtime_hours = round(runtime_hours, 2)) %>%
+  pivot_wider(
+    names_from = sample,
+    values_from = n_cluster
+  )
+```
+
+#### backup table
+
+```{r}
+cluster_stats_parsed %>% 
+  select(
+    sample,
+    # timestamp,
+    runtime_hours,
+    n_cluster
+  ) %>%
+  # round runtime to 1 digit
+  mutate(runtime_hours = round(runtime_hours, 2)) %>%
+  group_by(n_cluster) %>%
+  slice_head(n = 1) %>% 
+  arrange(sample, runtime_hours)
+
+```
+
+```{r}
+# Count sample columns (everything except the runtime column)
+n_sample_cols <- ncol(cluster_stats_table) - 1
+
+# Build flextable and add grouped header
+ft_cluster_stats <- cluster_stats_table %>% 
+  rename(`Runtime [h]` = runtime_hours) %>%
+  flextable() %>%
+  add_header_row(
+    values = c("", "Number of cluster per sample [n]"),
+    colwidths = c(1, n_sample_cols),
+  ) %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>% 
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%  
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5))%>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Export to Word
+doc_cluster_stats <- read_docx() %>%
+  body_add_par("Cluster Statistics over Time", style = "heading 1") %>%
+  body_add_flextable(ft_cluster_stats) %>%
+  body_add_par("", style = "Normal")  # optional spacer 
+
+print(doc_cluster_stats, target = "live/out/Cluster_Stats_over_time.docx")
+
+```
+
+#### save for main figure
+
+```{r}
+cluster_stats_parsed %>% 
+  write_tsv("main_figure/data/full_run_cluster_stats_parsed.tsv")
+```
+
+# plot
+
+## number of cluster per sample over time
+
+```{r}
+p.clusters_over_time <-
+  cluster_stats_parsed %>%
+  ggplot(aes(x = runtime_hours, y = n_cluster, color = sample, group = sample)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(se = FALSE) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(
+    # title = "Number of clusters per sample over time",
+    x = "Runtime [h]",
+    y = "Clusters [n]",
+    color = "Sample"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 18), 
+    legend.position = "bottom"
+  )
+
+p.clusters_over_time
+
+ggsave( 
+  plot = p.clusters_over_time, 
+  filename = "clusters_over_time.jpg", 
+  path = "live/out", 
+  width = 12, 
+  height = 9, 
+  dpi = 300
+)
+```

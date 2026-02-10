@@ -4,6 +4,34 @@ format: html
 editor: visual
 ---
 
+```{r setup-colors, include=FALSE}
+# Define consistent color schemes across all plots
+
+condition_colors <- c(
+  "Reference-based CPU" = "#E41A1C",  # red
+  "Reference-based GPU" = "#377EB8",  # blue
+  "POA-based CPU"        = "#4DAF4A",  # green
+  "POA-based GPU"        = "#984EA3"   # purple
+)
+
+reads_palette <- c(
+  "10" = "#E69F00",
+  "20" = "#56B4E9",
+  "30" = "#009E73",
+  "50" = "#F0E442"
+)
+
+add_consistent_colors <- function(aesthetic = "fill", var = "condition") {
+  if (var == "condition") {
+    if (aesthetic == "fill") return(scale_fill_manual(values = condition_colors))
+    else return(scale_color_manual(values = condition_colors))
+  } else if (var == "reads") {
+    if (aesthetic == "fill") return(scale_fill_manual(values = reads_palette))
+    else return(scale_color_manual(values = reads_palette))
+  }
+}
+```
+
 ```{r}
 # Libraries
 library(tidyverse)
@@ -15,6 +43,7 @@ library(patchwork)
 ```
 
 # Functions
+
 ```{r}
 # Function to read a trace file and add configuration info
 read_trace_file <- function(path) {
@@ -46,17 +75,19 @@ read_trace_file <- function(path) {
 ```
 
 # Paths
+
 ```{r}
 # Load all trace.txt files
 trace_paths <- list.files(
-  path = "../scalability/nextflow_stats",
+  path = "scalability/nextflow_stats",
   pattern = "trace.txt",
   recursive = TRUE,
   full.names = TRUE
 )
 ```
 
-# Load data 
+# Load data
+
 ```{r}
 trace_data <- 
   lapply(trace_paths, read_trace_file) %>% 
@@ -65,6 +96,7 @@ trace_data <-
 ```
 
 # Parse tables
+
 ```{r}
 # Parse start and complete times and calculate duration
 trace_data_parsed <- trace_data %>% 
@@ -72,6 +104,7 @@ trace_data_parsed <- trace_data %>%
 ```
 
 # Runtime per process
+
 ```{r}
 ## 1. Process-level summary
 duration_summary <- 
@@ -87,6 +120,7 @@ duration_summary <-
 ```
 
 ## Table
+
 ```{r}
 publication_table_duration_summary <- flextable(duration_summary %>%
                                                   arrange(sample, polishing, mode, process) %>%
@@ -107,11 +141,12 @@ publication_table_duration_summary <- flextable(duration_summary %>%
 doc_duration_summary <- read_docx() %>%
   body_add_flextable(publication_table_duration_summary)
 
-print(doc_duration_summary, target = "../scalability/out/SuppTable_duration_summary.docx")
+print(doc_duration_summary, target = "scalability/out/SuppTable_duration_summary.docx")
 
 ```
 
 ## Plot
+
 ```{r}
 p.runtime_per_process <- 
   duration_summary %>% 
@@ -142,13 +177,14 @@ p.runtime_per_process <-
 ggsave(
   plot = p.runtime_per_process,
   filename = "runtime_per_process.jpeg",
-  path = "../scalability/out/",
+  path = "scalability/out/",
   width = 12, height = 9
 )
 
 ```
 
 # Runtime normalized per task
+
 ```{r}
 runtime_per_task <- trace_data_parsed %>%
   mutate(
@@ -164,7 +200,8 @@ runtime_per_task <- trace_data_parsed %>%
   drop_na()
 ```
 
-## Table 
+## Table
+
 ```{r}
 table_runtime_per_task <- runtime_per_task %>%
   arrange(sample, polishing, mode, process) %>%
@@ -201,11 +238,12 @@ publication_table_runtime_per_task <- flextable(table_runtime_per_task) %>%
 doc_runtime_per_task <- read_docx() %>%
   body_add_flextable(publication_table_runtime_per_task)
 
-print(doc_runtime_per_task, target = "../scalability/out/SuppTable_runtime_per_task.docx")
+print(doc_runtime_per_task, target = "scalability/out/SuppTable_runtime_per_task.docx")
 
 ```
 
 # Total and normalized runtime
+
 ```{r}
 ## 2. Total runtime per condition
 total_runtime <- trace_data_parsed %>%
@@ -220,10 +258,10 @@ total_runtime <- trace_data_parsed %>%
   )
 ```
 
-
 ## Tables
 
 ### Total runtime
+
 ```{r}
 # Total runtime table
 table_total_runtime <- total_runtime %>%
@@ -248,11 +286,12 @@ publication_table_total_runtime <- flextable(table_total_runtime) %>%
 doc_total_runtime <- read_docx() %>%
   body_add_flextable(publication_table_total_runtime)
 
-print(doc_total_runtime, target = "../scalability/out/SuppTable_total_runtime.docx")
+print(doc_total_runtime, target = "scalability/out/SuppTable_total_runtime.docx")
 
 ```
 
-### Normalized runtime 
+### Normalized runtime
+
 ```{r}
 # Normalized runtime table
 table_normalized_runtime <- total_runtime %>%
@@ -277,11 +316,12 @@ publication_table_normalized_runtime <- flextable(table_normalized_runtime) %>%
 doc_normalized_runtime <- read_docx() %>%
   body_add_flextable(publication_table_normalized_runtime)
 
-print(doc_normalized_runtime, target = "../scalability/out/SuppTable_normalized_runtime.docx")
+print(doc_normalized_runtime, target = "scalability/out/SuppTable_normalized_runtime.docx")
 
 ```
 
 ### combined
+
 ```{r}
 # Combine total and normalized runtime into one table
 table_runtime_combined <- total_runtime %>%
@@ -318,13 +358,13 @@ publication_table_runtime_combined <- flextable(table_runtime_combined) %>%
 doc_runtime_combined <- read_docx() %>%
   body_add_flextable(publication_table_runtime_combined)
 
-print(doc_runtime_combined, target = "../scalability/out/SuppTable_runtime_combined.docx")
+print(doc_runtime_combined, target = "scalability/out/SuppTable_runtime_combined.docx")
 ```
 
+### Predict missing datapoints
 
-### Predict missing datapoints 
 ```{r}
-# --- Predict missing sample sizes up to 192 ---
+#  Predict missing sample sizes up to 192 
 
 # Define all target sample sizes up to 192
 all_samples <- data.frame(sample_num = c(1, 5, 10, 20, 50, 96))
@@ -374,7 +414,7 @@ runtime_complete_norm <- runtime_complete %>%
   ungroup()
 
 
-# ---- Table of predictions ----
+# - Table of predictions -
 table_runtime_complete <- runtime_complete_norm %>%
   arrange(polishing, mode, sample_num) %>%
   mutate(
@@ -409,11 +449,11 @@ publication_table_runtime_complete <- flextable(table_runtime_complete) %>%
 doc_runtime_complete <- read_docx() %>%
   body_add_flextable(publication_table_runtime_complete)
 
-print(doc_runtime_complete, target = "../scalability/out/SuppTable_runtime_combined_complete.docx")
+print(doc_runtime_complete, target = "scalability/out/SuppTable_runtime_combined_complete.docx")
 ```
 
-
 ### Complete
+
 ```{r}
 colors <- 
   c(
@@ -423,7 +463,7 @@ colors <-
     "GPU Reference-based" = "#3C5488"
   )
 
-# ---- Plot observed + predicted ----
+# - Plot observed + predicted -
 p_runtime_complete <- runtime_complete %>%
   ggplot(aes(
     x = sample_num,
@@ -456,15 +496,21 @@ p_runtime_complete <- runtime_complete %>%
 ggsave(
   plot = p_runtime_complete,
   filename = "p_runtime_complete.jpeg",
-  path = "../scalability/out/",
+  path = "scalability/out/",
   width = 12, height = 9, dpi = 600
 )
 
 ```
+### save plot data
+```{r}
+runtime_complete %>% 
+  write_tsv("main_figure/scalability_plot.tsv")
+```
 ### normalized
+
 ```{r}
 
-# --- Normalized runtime with complete values (observed + predicted) ---
+#  Normalized runtime with complete values (observed + predicted) 
 
 
 # Plot normalized runtime with observed + predicted
@@ -499,7 +545,7 @@ p_normalized_runtime_no_facet_complete
 ggsave(
   plot = p_normalized_runtime_no_facet_complete,
   filename = "p_normalized_runtime_no_facet_complete.jpeg",
-  path = "../scalability/out/",
+  path = "scalability/out/",
   height = 9,
   width = 12,
   dpi = 600
@@ -510,6 +556,7 @@ ggsave(
 ## Plots
 
 ## Plots - not faceted
+
 ```{r}
 p_total_runtime_no_facet <- 
   total_runtime %>% 
@@ -564,6 +611,7 @@ p_normalized_runtime_no_facet <-
 ```
 
 ### patchwork
+
 ```{r}
 design_runtime_no_facet <- "AB"
 
@@ -592,7 +640,7 @@ pw_runtime_no_facet
 ggsave(
   plot = pw_runtime_no_facet, 
   filename = "pw_runtime_no_facet.jpeg", 
-  path = "../scalability/out/",
+  path = "scalability/out/",
   height = 9, 
   width = 12, 
   dpi = 600
@@ -631,14 +679,16 @@ p_total_runtime_scatter
 ggsave(
   plot = p_total_runtime_scatter, 
   filename = "p_total_runtime_scatter.jpeg", 
-  path = "../scalability/out/",
+  path = "scalability/out/",
   height = 9, 
   width = 12, 
   dpi = 600
 )
 ```
 
+
 ### normalized runtime
+
 ```{r}
 # p_normalized_runtime_no_facet <- 
 total_runtime %>%
@@ -661,7 +711,8 @@ total_runtime %>%
   )
 ```
 
-### patchwork - scatter, bar 
+### patchwork - scatter, bar
+
 ```{r}
 design_runtime_no_facet <- "AB"
 
@@ -691,10 +742,9 @@ pw_runtime_no_facet_scatter
 ggsave(
   plot = pw_runtime_no_facet_scatter, 
   filename = "pw_runtime_no_facet_scatter.jpeg", 
-  path = "../scalability/out/",
+  path = "scalability/out/",
   height = 9, 
   width = 12, 
   dpi = 600
 )
 ```
-

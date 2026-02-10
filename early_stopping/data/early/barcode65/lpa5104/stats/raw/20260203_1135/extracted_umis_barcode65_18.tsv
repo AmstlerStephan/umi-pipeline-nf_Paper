@@ -1,0 +1,2 @@
+output_file	max_pattern_distance	detected_forward_strands	detected_reverse_strands	ratio_fwd_rvs	total_reads	included_reads	percent_of_total_reads
+extracted_umis_barcode65_18	3	2616	2789	0.937970598780925	5405	5081	94.00555041628122

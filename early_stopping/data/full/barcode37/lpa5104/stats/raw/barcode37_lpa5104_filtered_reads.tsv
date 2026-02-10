@@ -1,0 +1,10 @@
+sample	target	metric	count	percent
+barcode37	lpa5104	reads_found	2	100.00
+barcode37	lpa5104	reads_unmapped	0	0.00
+barcode37	lpa5104	reads_secondary	0	0.00
+barcode37	lpa5104	reads_supplementary	1	50.00
+barcode37	lpa5104	reads_on_target	1	50.00
+barcode37	lpa5104	reads_concatamer	1	50.00
+barcode37	lpa5104	reads_short	0	0.00
+barcode37	lpa5104	reads_long	0	0.00
+barcode37	lpa5104	reads_filtered	0	0.00

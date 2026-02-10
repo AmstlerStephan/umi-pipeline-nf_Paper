@@ -15,10 +15,10 @@ library(officer)
 # file paths
 
 ```{r}
-abundance_table_umi_poa_path <-  "../Karst/context/poa/abundance_table_genus.tsv"
-abundance_table_umi_reference_path <-  "../Karst/context/reference_based/abundance_table_genus.tsv"
-abundance_table_karst_path <-  "../Karst/supplementary material/relative_abundance_zymo.txt"
-abundance_table_karst_new_path <-  "../Karst/karst/abundance_table_genus.tsv"
+abundance_table_umi_poa_path <-  "Karst/context/poa/abundance_table_genus.tsv"
+abundance_table_umi_reference_path <-  "Karst/context/reference_based/abundance_table_genus.tsv"
+abundance_table_karst_path <-  "Karst/supplementary material/relative_abundance_zymo.txt"
+abundance_table_karst_new_path <-  "Karst/karst/abundance_table_genus.tsv"
 ```
 
 # read files
@@ -104,17 +104,30 @@ genus_abundance <-
     total_reads = sum(total_abundance),
     relative_abundance = total_abundance / total_reads * 100, 
   ) %>% 
+  # filter(relative_abundance > 0.5) %>% # keep genera with more than 0.5% abundance
+  ungroup() %>%
   select(Genus, relative_abundance, pipeline, polishing, total_abundance, total_reads)
 
+genus_abundance_parsed <- 
+  genus_abundance %>% 
+  select(Genus, relative_abundance, pipeline, polishing) %>%
+  pivot_wider(
+    names_from = c(pipeline, polishing),
+    values_from = c(relative_abundance)
+  )
 ```
 
-## comparison
-
+### comparison
 ```{r}
 comparison <-
   abundance_table_karst_parsed %>% 
   full_join(genus_abundance, by = "Genus") %>% 
-  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  mutate_if(
+    is.numeric, ~replace(., is.na(.), 0)
+  ) %>% 
+  mutate(
+    across(c(ONT_10.3_UMI, Theoretical, relative_abundance), round, 2)
+  ) %>%  
   select(
     Genus, ONT_10.3_UMI, Theoretical, relative_abundance, pipeline, polishing, total_abundance, total_reads
   )
@@ -150,11 +163,19 @@ correlation_pipelines <-
 # cor(comparison$relative_abundance_umi_pipeline_nf, comparison$Theoretical)
 
 ```
+### Explain differences in read number between POA and Refrerence-based polishing
+```{r}
+abundance_table_umi_poa %>%
+  summarise(total_reads = sum(total))
 
-### Table
+abundance_table_umi_reference %>%
+  summarise(total_reads = sum(total))
+
+```
+
+## Table
 
 #### correlation
-
 ```{r}
 # Round values for publication
 correlation_pipelines <- correlation_pipelines %>%
@@ -186,19 +207,11 @@ doc_correlation_pipelines <- read_docx() %>%
   body_add_flextable(ft_correlation_pipelines) %>%
   body_add_par("", style = "Normal")  # optional spacer
 
-print(doc_correlation_pipelines, target = "../Karst/out/SuppTable_correlation_pipelines.docx")
+print(doc_correlation_pipelines, target = "Karst/out/SuppTable_correlation_pipelines.docx")
 ```
 
 #### comparison
-
 ```{r}
-# Optional: round numeric columns
-comparison <- comparison %>%
-  mutate(
-    across(c(ONT_10.3_UMI, Theoretical, relative_abundance), round, 2)
-  ) %>% 
-  select(-Theoretical)
-
 # Create formatted flextable
 ft_comparison <- flextable(comparison) %>%
   set_header_labels(
@@ -226,38 +239,173 @@ doc_comparison <- read_docx() %>%
   body_add_par("Relative Abundance Table by Genus", style = "heading 1") %>%
   body_add_flextable(ft_comparison)
 
-print(doc_comparison, target = "../Karst/out/SuppTable_comparison_abundance.docx")
+print(doc_comparison, target = "Karst/out/SuppTable_comparison_abundance.docx")
 ```
 
-# compare karst vs umi-pipeline-nf vs theoretical abundance
+## performance measures (precision, recall, species-level correlation)
+Use the number of calssifiable reads for both umi-pipeline-nf polishing methods to definer precision and recall
+use the relative abundances of karst, both umi-pipeline-nf polishing methods and theoretical to calculate the correlation at species level
+```{r}
+# total reads
+abundance_table_umi_poa %>%
+  summarise(total_reads = sum(total))
+abundance_table_umi_reference %>%
+  summarise(total_reads = sum(total))
+
+# Use reads correctly assigned read counts to a genus to calculate precision and recall
+performance_measures <-
+genus_abundance %>%
+  mutate(
+    correctly_assigned = Genus != "other",
+  ) %>%
+  group_by(pipeline, polishing) %>%
+  summarise(
+    true_positives = sum(if_else(correctly_assigned, total_abundance, 0)),
+    false_positives = sum(if_else(!correctly_assigned, total_abundance, 0)),
+    false_negatives = sum(
+      case_when(
+        pipeline == "umi-pipeline-nf" & polishing == "POA-based" ~
+          abundance_table_karst_parsed %>%
+          filter(!Genus %in% genus_abundance$Genus[genus_abundance$pipeline == "umi-pipeline-nf" & genus_abundance$polishing == "POA-based"]) %>%
+          pull(Genus) %>%
+          length(),
+        pipeline == "umi-pipeline-nf" & polishing == "Reference-based" ~
+          abundance_table_karst_parsed %>%
+          filter(!Genus %in% genus_abundance$Genus[genus_abundance$pipeline == "umi-pipeline-nf" & genus_abundance$polishing == "Reference-based"]) %>%
+          pull(Genus) %>%
+          length(),
+        TRUE ~ 0
+      )
+    ),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    precision = true_positives / (true_positives + false_positives),
+    recall = true_positives / (true_positives + false_negatives), 
+    f1_score = 2 * (precision * recall) / (precision + recall), 
+  )
+```
+
+### create flextable for performance measures
+```{r}
+ft_performance_measures <- 
+  performance_measures %>%
+  select(pipeline, polishing, precision, recall, f1_score) %>%
+  flextable() %>% 
+  set_header_labels(
+    pipeline = "Pipeline",
+    polishing = "Polishing Method",
+    precision = "Precision",
+    recall = "Recall",
+    f1_score = "F1 Score"
+  ) %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>% 
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>% 
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%  
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5))%>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Export to Word
+doc_performance_measures <- read_docx() %>%
+  body_add_par("Performance Measures by Polishing Method", style = "heading 1") %>%
+  body_add_flextable(ft_performance_measures) %>%
+  body_add_par("", style = "Normal")  # optional spacer 
+
+print(doc_performance_measures, target = "Karst/out/SuppTable_performance_measures.docx")
+```
+
+
+### correlation
+#### POA-based
+```{r}
+corraltion_poa <- 
+comparison %>% 
+  filter(polishing == "POA-based") %>%
+  summarise(
+    correlation_karst = cor(ONT_10.3_UMI, relative_abundance), 
+    correlation_ground_truth = cor(Theoretical, relative_abundance)
+  ) %>% 
+  mutate(
+    method = "umi-pipeline-nf (POA-based)"
+  )
+```
+
+#### Reference-based
 
 ```{r}
-
-p.relative_abundance_comparison <- 
-  ggplot(comparison_long, aes(x = reorder(Genus, Abundance), y = Abundance, fill = Sample)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  labs(
-    x = "Genus", 
-    y = "Relative abundance [%]",
-    title = "Genus-Level Comparison of Abundances"
-  ) +
-  theme_bw() +
-  theme(
-    text = element_text(size = 22, colour = "black"),
-    axis.text = element_text(colour = "black"),
-    axis.text.x = element_text(angle = 45, hjust = 1)
+correlation_reference <-
+comparison %>% 
+  filter(polishing == "Reference-based") %>%
+  summarise(
+    correlation_karst = cor(ONT_10.3_UMI, relative_abundance), 
+    correlation_ground_truth = cor(Theoretical, relative_abundance)
+  ) %>% 
+  mutate(
+    method = "umi-pipeline-nf (Reference-based)"
   )
 
-ggsave(
-  plot = p.relative_abundance_comparison,
-  filename = "relative_abundance_comparison.jpeg", 
-  path = "../Karst/out/",
-  width = 12, 
-  height = 9
-)
 ```
 
-# compare karst vs umi-pipeline-nf vs theoretical abundance
+#### Karst
+
+```{r}
+correlation_karst <-
+comparison %>% 
+  summarise(
+    correlation_ground_truth = cor(ONT_10.3_UMI, Theoretical)
+  ) %>% 
+  mutate(
+    method = "longread_umi (Karst et al.)"
+  )
+```
+
+#### combine
+
+```{r}
+correlation_summary <- 
+  bind_rows(corraltion_poa, correlation_reference, correlation_karst)
+  
+```
+
+### create flextable
+```{r}
+ft_correlation_summary <- 
+  correlation_summary %>% 
+  select(method, correlation_karst, correlation_ground_truth) %>%
+  flextable() %>% 
+  set_header_labels(
+    method = "Method",
+    correlation_karst = "Correlation with Karst et al.",
+    correlation_ground_truth = "Correlation with Theoretical"
+  ) %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>% 
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%  
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5))%>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Export to Word
+doc_correlation_summary <- read_docx() %>%
+  body_add_par("Correlation Summary", style = "heading 1") %>%
+  body_add_flextable(ft_correlation_summary) %>%
+  body_add_par("", style = "Normal")  # optional spacer
+
+print(doc_correlation_summary, target = "Karst/out/SuppTable_correlation_summary.docx")
+
+
+```
+
+
+# Plots
+## compare karst vs umi-pipeline-nf vs theoretical abundance
 
 ```{r}
 
@@ -270,7 +418,6 @@ p.relative_abundance_comparison_polishing <-
   labs(
     x = "longread_umi (Karst et al.)", 
     y = "umi-pipeline-nf", 
-    # title = "Relative abundance of each Genus (ONT MinION R10.3)"
   ) +
   theme_bw() +
   theme(
@@ -281,48 +428,142 @@ p.relative_abundance_comparison_polishing <-
 ggsave(
   plot = p.relative_abundance_comparison_polishing,
   filename = "relative_abundance_comparison_polishing.jpeg", 
-  path = "../Karst/out/",
+  path = "Karst/out/",
   width = 12, 
   height = 9
 )
 ```
 
-# compare karst with umi-pipeline-nf
+# Create a stacked barpolot to compare the abundance profiles for Karst, Theoretical and umi-pipeline-nf both methods
 
 ```{r}
+plot_naming <- 
+  c(
+    "umi-pipeline-nf_POA-based" = "umi-pipeline-nf\n(POA-based)", 
+    "umi-pipeline-nf_Reference-based" = "umi-pipeline-nf\n(Reference-based)", 
+    "ONT_10.3_UMI" = "longread_umi\n(Karst et al.)",
+    # "ONT_meta" = "ONT meta\n(Karst et al.)",
+    "Theoretical" = "Theoretical\n(Zymo Research)"
+  )
+plot_order <- 
+  c(
+    "umi-pipeline-nf_Reference-based",
+    "umi-pipeline-nf_POA-based", 
+    "ONT_10.3_UMI",
+    "Theoretical"
+    # "ONT_meta",
+  )
 
-# p.correlation_longread_umi_umi_pipeline_nf <- 
-#   comparison %>% 
-#   ggplot(aes(ONT_10.3_UMI, relative_abundance_umi_pipeline_nf)) +
-#   geom_smooth(method = "lm", color = "black", fill = "grey60") +
-#   geom_point(aes(color = Genus), size = 3) +
-#   annotate(geom = "text", x = 3, y = 30, label = paste("R^2 ==", round(rsquare_pipelines, 3)), parse = TRUE, size = 8) +
-#   annotate(geom = "rect", xmin = 0, xmax = 6, ymin = 28, ymax = 32, fill = NA, color = "black") + 
-#   labs(
-#     x = "longread_umi (Karst et al.)", 
-#     y = "umi-pipeline-nf", 
-#     title = "Relative abundance of each Genus (ONT MinION R10.3)"
-#   ) +
-#   theme_bw() +
-#   theme(
-#     text = element_text(size = 22, color = "black"), 
-#     axis.text = element_text(colour = "black")
-#   )
-# 
-# ggsave(
-#   plot = p.correlation_longread_umi_umi_pipeline_nf,
-#   filename = "correlation_longread_umi_umi_pipeline_nf.jpeg", 
-#   path = "../Karst/out/",
-#   width = 12, 
-#   height = 9
-# )
+plot_colors <- 
+  c(
+    "Bacillus" = "#1f77b4",
+    "Escherichia" = "#ff7f0e",
+    "Enterococcus" = "#ffbb78",
+    "Lactobacillus" = "#2ca02c",
+    "Listeria" = "#d62728",
+    "Pseudomonas" = "#9467bd",
+    "Salmonella" = "#8c564b",
+    "Staphylococcus" = "#e377c2",
+    "other" = "#7f7f7f"
+  )
+
+plot_colors <- c(
+  "Bacillus"     = "#66c2a5",
+  "Escherichia"  = "#fc8d62",
+  "Enterococcus" = "#8da0cb",
+  "Lactobacillus"= "#a6d854",
+  "Listeria"     = "#e78ac3",
+  "Pseudomonas"  = "#ffd92f",
+  "Salmonella"   = "#e5c494",
+  "Staphylococcus" = "#80b1d3",  # ergänzend, dezentes Blau
+  "other"        = "#8c8c8c"     # neutral grau
+)
+
+plot_colors <- c(
+  "Bacillus"     = "#6D90A6",
+  "Escherichia"  = "#A6BD8A",
+  "Enterococcus" = "#C9A3A9",
+  "Lactobacillus"= "#8DB0AF",
+  "Listeria"     = "#B9A56A",
+  "Pseudomonas"  = "#8D7F8D",
+  "Salmonella"   = "#A2C4A2",
+  "Staphylococcus" = "#9CA3B3",
+  "other"        = "#7F7F7F"
+)
+
+# caluclate the least difference of each genus of umi-pipeline-nf_Reference-based and Theoretical and order the colors accordingly
+genus_order <- 
+  comparison %>%
+  filter(polishing == "Reference-based") %>%
+  mutate( 
+    difference = abs(relative_abundance - Theoretical)
+  ) %>% 
+  arrange(desc(difference)) %>% 
+  pull(Genus)
+
+genus_order <- 
+  comparison %>%
+  filter(polishing == "Reference-based") %>%
+  arrange(desc(relative_abundance)) %>% 
+  pull(Genus)
+
+comparison_barplot <- 
+  genus_abundance_parsed %>% 
+  full_join(abundance_table_karst_parsed, by = "Genus") %>% 
+  select(
+    -PacBio_UMI, -PacBio_CCS, -ONT_meta
+  ) %>% 
+  pivot_longer(
+    cols = c(Theoretical, ONT_10.3_UMI, `umi-pipeline-nf_POA-based`, `umi-pipeline-nf_Reference-based`), names_to = "Pipeline", values_to = "Abundance"
+  ) %>% 
+  mutate(
+    Pipeline = factor(Pipeline, levels = plot_order), 
+    Genus = factor(Genus, levels = genus_order),
+    Abundance = replace_na(Abundance, 0)
+  )
+
+comparison_barplot %>% 
+  write_tsv("main_figure/stacked_barplot_comparison_theoretical.tsv")
+
+
+p.stacked_barplot_theoretical <-
+  comparison_barplot %>%
+  ggplot(aes(x = Pipeline, y = Abundance, fill = Genus)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = plot_colors) +
+  scale_x_discrete(labels = plot_naming) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 102), breaks = seq(0, 100, 10)) +
+  labs(
+    x = "", 
+    y = "Relative abundance [%]",
+    # title = "Genus-Level Comparison of Abundances"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    text = element_text(size = 22, colour = "black"),
+    axis.text = element_text(colour = "black"),
+    # axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+p.stacked_barplot_theoretical
+
+ggsave(
+  plot = p.stacked_barplot_theoretical,
+  filename = "stacked_barplot_comparison_theoretical.jpeg", 
+  path = "Karst/out/",
+  width = 12, 
+  height = 9
+)
 
 ```
 
 # Lunch seminar
-## correlation 
+
+## correlation
+
 ```{r}
-  comparison %>% 
+comparison %>% 
   ggplot(aes(x = ONT_10.3_UMI, y = relative_abundance)) +
   geom_smooth(method = "lm", color = "black", fill = "grey60") +
   geom_point(aes(color = Genus), size = 3) +
@@ -340,10 +581,9 @@ ggsave(
 
 ggsave(
   filename = "lunchseminar_benchmarking_karst.jpeg", 
-  path = "../lunch_seminar/out/",
+  path = "lunch_seminar/out/",
   dpi = 600,
   width = 12, 
   height = 9
 )
 ```
-

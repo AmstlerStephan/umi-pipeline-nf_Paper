@@ -29,8 +29,8 @@ This repository contains all scripts, configuration files, and benchmarking reso
 - **Raw reads:** The raw reads are available in the ENA database under accession [PRJEB73509](https://www.ebi.ac.uk/ena/browser/view/PRJEB73509).
 - **Basecalling:** `dorado` with model `400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0`
 - **Pipeline:** `umi-pipeline-nf` in both POA- and reference-based configurations (GPU-mode)
-- **Scripts Location:**  
-  [`pipelines/umi-pipeline-nf/benchmarking`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/benchmarking)
+- **Scripts Location:**
+  [`benchmarking`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/benchmarking)
 - The same sample was used for benchmarking against pipeline-umi-amplicon: [`pipelines/pipeline-umi-amplicon`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipeline-umi-amplicon)
 
 ---
@@ -41,8 +41,8 @@ This repository contains all scripts, configuration files, and benchmarking reso
 - **Raw reads:** The raw reads are available in the ENA database under accession [PRJEB73509](https://www.ebi.ac.uk/ena/browser/view/PRJEB73509).
 - **Basecalling:** `dorado` with model `400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0`
 - **Pipeline:** `umi-pipeline-nf` in both POA- and reference-based configurations (GPU-mode)
-- **Scripts Location:**  
-  [`pipelines/umi-pipeline-nf/scalability`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/scalability)
+- **Scripts Location:**
+  [`scalability`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/scalability)
 
 ---
 
@@ -60,7 +60,7 @@ This repository contains all scripts, configuration files, and benchmarking reso
 ## 🧬 Early Stopping Experiment
 
 - **Samples:** 8 samples selected from the scalability experiment
-- **Raw reads:** The raw reads are available in the ENA database under accession [PRJEB73509](https://www.ebi.ac.uk/ena/browser/view/PRJEB73509). 
+- **Raw reads:** The raw reads are available in the ENA database under accession [PRJEB73509](https://www.ebi.ac.uk/ena/browser/view/PRJEB73509).
 - **Basecalling:** dorado with model 400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0
 - **Pipeline:** umi-pipeline-nf with early stopping criteria applied
 - **Scripts Location:**
@@ -75,20 +75,20 @@ This repository contains all scripts, configuration files, and benchmarking reso
 - **Basecalling:** `guppy v3.4.4` (HAC model)
 - **Preprocessing:** FASTQ splitting using `seqkit v2.10.0`
 - **Pipeline:** `umi-pipeline-nf` in POA-based and reference-based GPU-mode
-- **Scripts Location:**  
-  [`pipelines/karst`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/Karst)
+- **Scripts Location:**
+  [`Karst`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/Karst)
 
 ---
 
 ## 🧫 SARS-CoV-2 Dataset (Benchmarking Against ConSeqUMI)
 
-- **Data:** UMI-tagged SARS-CoV-2 patient genomes  
+- **Data:** UMI-tagged SARS-CoV-2 patient genomes
   **Source:** NCBI GEO [GSE288938](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE288938)
 - **Pipeline:** `umi-pipeline-nf` in reference-based GPU-mode
 - **Consensus Analysis:** `Nextclade docker v3.15.3`
 - **Comparison Data:** Extracted from ConSeqUMI preprint
-- **Scripts Location:**  
-  [`pipelines/consequmi`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/ConSeqUmi)
+- **Scripts Location:**
+  [`ConSeqUmi`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/ConSeqUmi)
 
 ---
 
@@ -98,9 +98,9 @@ This repository contains all scripts, configuration files, and benchmarking reso
 
 ## 📊 Post-processing & Plotting
 
-- **Software:**  
-  - `R 4.4.0`  
-  - `tidyverse 2.0.0`  
+- **Software:**
+  - `R 4.4.0`
+  - `tidyverse 2.0.0`
 - **Includes:** Benchmarking tables, consensus quality plots, variant stats
 
 ---

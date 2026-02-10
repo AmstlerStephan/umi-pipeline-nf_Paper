@@ -1,0 +1,676 @@
+---
+title: "early_stopping_QC"
+format: html
+editor: visual
+---
+
+# library
+
+```{r}
+library(tidyverse)
+library(flextable)
+library(officer)
+library(patchwork)
+```
+
+# funtions
+
+```{r}
+read_cluster_stats <- function(path){
+  # extract timestamt "20260202_1735"
+  timestamp <- str_extract(path, "\\d{8}_\\d{4}")
+  
+  read_tsv(path) %>%
+    mutate(
+      timestamp = as.POSIXct(timestamp, format = "%Y%m%d_%H%M", tz = "UTC"),
+    )
+}
+
+read_filtered_read_stats <- function(path){
+  barcode <- str_extract(path, "barcode\\d+")
+  timestamp <- str_extract(path, "\\d{8}_\\d{4}")
+  
+  
+  read_tsv(path) %>%
+    filter(format == "count") %>% 
+    select(reads_found, reads_on_target, reads_filtered) %>%
+    pivot_longer(
+      cols = c(reads_found, reads_on_target, reads_filtered), 
+      names_to = "filter_step",
+      values_to = "n_reads"
+    ) %>% 
+    mutate(
+      timestamp = as.POSIXct(timestamp, format = "%Y%m%d_%H%M", tz = "UTC"),
+      barcode = barcode
+    )
+  
+}
+
+read_extracted_umi_stats <- function(path){
+  barcode <- str_extract(path, "barcode\\d+")
+  timestamp <- str_extract(path, "\\d{8}_\\d{4}")
+  
+  read_tsv(path) %>%
+    select(detected_forward_strands, detected_reverse_strands, total_reads, included_reads) %>% 
+    pivot_longer(
+      cols = c(detected_forward_strands, detected_reverse_strands, total_reads, included_reads), 
+      names_to = "umi_metric",
+      values_to = "n_counts"
+    ) %>%
+    mutate(
+      timestamp = as.POSIXct(timestamp, format = "%Y%m%d_%H%M", tz = "UTC"),
+      barcode = barcode
+    )
+}
+
+read_variant_calling <- function(path){
+  barcode <- str_extract(path, "barcode\\d+")
+  mode <- str_remove(str_extract(path, "full\\/|early\\/"), "/")
+  
+  read_tsv(path) %>%
+    mutate(
+      barcode = barcode, 
+      mode = mode
+    ) %>% 
+    select(
+      barcode, 
+      position = Position,
+      reference = Reference,
+      variant = Variant,
+      variant_level = `Variant-level`
+    )
+}
+
+read_summary <- function(path){
+  barcode <- str_extract(path, "barcode\\d+")
+  mode <- str_remove(str_extract(path, "full\\/|early\\/"), "/")  
+  read_tsv(path) %>%
+    mutate(
+      mode = mode,
+      barcode = barcode
+    )
+}
+```
+
+# paths
+
+```{r}
+cluster_stats_paths <- list.files(
+  path =  "early_stopping/data/early/cluster_stats", 
+  pattern = "summary_cluster_stats.tsv", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+filtered_read_stats_paths <- list.files(
+  path =  "early_stopping/data/early/", 
+  pattern = "filter_reads_stats.tsv", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+extracted_umis_stats_paths <- list.files(
+  path =  "early_stopping/data/early", 
+  pattern = "extracted_umis_barcode", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+variant_calling_pahts <- list.files(
+  path =  "early_stopping/data/", 
+  pattern = "consensus_parsed.txt$", 
+  recursive = TRUE, 
+  full.names = TRUE
+)
+
+cluster_stats_full_path <- "early_stopping/data/full/cluster_stats/summary_cluster_stats.tsv"
+sample_sheet_path <- "early_stopping/data/sample_sheet/sample_sheet.tsv"
+```
+
+# load data
+
+```{r, message=FALSE}
+cluster_stats <- lapply(cluster_stats_paths, read_cluster_stats ) %>%
+  bind_rows()
+
+
+filtered_read_stats <- lapply(filtered_read_stats_paths, read_filtered_read_stats ) %>%
+  bind_rows()
+
+extracted_umis_stats <- lapply(extracted_umis_stats_paths, read_extracted_umi_stats ) %>%
+  bind_rows()
+
+variant_calling_stats_early_paths <- variant_calling_pahts[ str_detect(variant_calling_pahts, "early/") ]
+variant_calling_stats_full_paths <- variant_calling_pahts[ str_detect(variant_calling_pahts, "full/") ]
+
+variant_calling_stats_early <- lapply(variant_calling_stats_early_paths, read_variant_calling ) %>%
+  bind_rows()
+
+variant_calling_stats_full <- lapply(variant_calling_stats_full_paths, read_variant_calling ) %>%
+  bind_rows()
+
+cluster_stats_full <- read_tsv(cluster_stats_full_path) %>% 
+  mutate(
+    mode = "full"
+  )
+sample_sheet <- read_tsv(sample_sheet_path)
+```
+
+# parse tables
+
+## start time
+
+```{r}
+start_time <- min(filtered_read_stats$timestamp)
+```
+
+## extracted umis parsed
+
+```{r}
+# accumulate reads over time
+extracted_umis_stats_accumulated <- 
+  extracted_umis_stats %>%
+  group_by(barcode, umi_metric) %>%
+  arrange(timestamp) %>%
+  mutate(
+    accumulated_counts = cumsum(n_counts), 
+    runtime_hours = as.numeric(difftime(timestamp, start_time, units = "hours")),
+  ) %>%
+  inner_join(sample_sheet) %>%
+  ungroup()
+```
+
+## filtered read stats parsed
+
+```{r}
+filtered_read_stats_accumulated <- 
+  filtered_read_stats %>%
+  group_by(barcode, filter_step) %>%
+  arrange(timestamp) %>%
+  mutate(
+    accumulated_reads = cumsum(n_reads),
+    runtime_hours = as.numeric(difftime(timestamp, start_time, units = "hours")),
+  ) %>%
+  inner_join(sample_sheet) %>% 
+  ungroup()
+```
+
+## paste timestamp to date time
+
+```{r}
+cluster_stats_parsed <- 
+  cluster_stats %>%
+  mutate(
+    runtime_hours = as.numeric(difftime(timestamp, start_time, units = "hours"))
+  ) %>% 
+  rename(
+    barcode = sample
+  ) %>%
+  inner_join(sample_sheet)
+```
+
+### save for main figure
+
+```{r}
+cluster_stats_parsed %>%
+  write_tsv("main_figure/data/early_stopping_cluster_stats_parsed.tsv")
+```
+
+## variant calling performance
+
+calculate the correlation and performance metrics of variant calling between early stopping and full run \### join data
+
+```{r}
+variant_calling_comparison <-
+  variant_calling_stats_early %>%
+  full_join(
+    variant_calling_stats_full,
+    by = c("barcode", "position", "reference", "variant"),
+    suffix = c("_early", "_full")
+  ) %>% 
+  inner_join(sample_sheet) %>%
+  mutate(
+    variant_level_early = ifelse(is.na(variant_level_early), 0, variant_level_early),
+    variant_level_full = ifelse(is.na(variant_level_full), 0, variant_level_full)
+  )
+```
+
+#### save for main figure
+
+```{r}
+variant_calling_comparison %>%
+  write_tsv("main_figure/data/early_stopping_variant_calling_comparison.tsv")
+```
+
+### correlation
+
+```{r}
+variant_calling_correlation <- 
+  variant_calling_comparison %>%
+  group_by(sample) %>%
+  summarise(
+    correlation = cor(variant_level_early, variant_level_full, method = "pearson"),
+    # calculate R-squared coeefficient of determination using a regression model
+    r_squared = summary(lm(variant_level_early ~ variant_level_full))$r.squared,
+    # rmse = sqrt(mean((variant_level_early - variant_level_full)^2)),
+    # mae = mean(abs(variant_level_early - variant_level_full))
+  ) %>%
+  ungroup()
+
+# correlation summary
+variant_calling_correlation_summary <- 
+  variant_calling_correlation %>%
+  summarise(
+    mean_correlation = mean(correlation),
+    median_correlation = median(correlation),
+    sd_correlation = sd(correlation)
+  )
+
+```
+
+### Number of variants
+
+```{r}
+variant_calling_variant_counts <- 
+  variant_calling_comparison %>%
+  group_by(sample) %>%
+  summarise(
+    n_variants_early = sum(variant_level_early > 0),
+    n_variants_full = sum(variant_level_full > 0)
+  ) %>%
+  ungroup()
+```
+
+### performance metrics
+
+```{r}
+length <- 5104
+variant_calling_performance <- 
+  variant_calling_comparison %>%
+  mutate(
+    true_positive = variant_level_early > 0 & variant_level_full > 0,
+    false_positive = variant_level_early > 0 & variant_level_full == 0,
+    false_negative = variant_level_early == 0 & variant_level_full > 0,
+  ) %>%
+  group_by(sample) %>%
+  summarise(
+    true_positive = sum(true_positive),
+    false_positive = sum(false_positive),
+    false_negative = sum(false_negative),
+    true_negative = length - (true_positive + false_positive + false_negative),  # assuming total possible variants is 5104
+    sensitivity = true_positive / (true_positive + false_negative),
+    specificity = true_negative / (true_negative + false_positive),
+    precision = true_positive / (true_positive + false_positive),
+    # accuracy = (true_positive + true_negative) / length
+  ) %>%
+  ungroup()
+
+variant_calling_performance
+```
+
+### combine
+
+```{r}
+variant_calling_summary <- 
+  variant_calling_correlation %>%
+  inner_join(variant_calling_performance)
+```
+
+### write table
+
+```{r}
+ft_variant_calling_summary <- 
+  variant_calling_summary %>% 
+  mutate(
+    correlation = round(correlation, 3),
+    r_squared = round(r_squared, 3),
+    sensitivity = round(sensitivity, 3),
+    specificity = round(specificity, 3),
+    precision = round(precision, 3),
+  ) %>% 
+  flextable() %>%
+  set_header_labels(
+    correlation = "Pearson's r",
+    r_squared = "R-squared",
+    true_positive = "True Positives",
+    false_positive = "False Positives",
+    false_negative = "False Negatives",
+    true_negative = "True Negatives",
+    sensitivity = "Sensitivity",
+    specificity = "Specificity",
+    precision = "Precision"
+  ) %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>% 
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%  
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5))%>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Export to Word
+doc_variant_calling_summary <- read_docx() %>%
+  body_add_par("Variant Calling Performance Summary", style = "heading 1") %>%
+  body_add_flextable(ft_variant_calling_summary) %>%
+  body_add_par("", style = "Normal")  # optional spacer
+
+print(doc_variant_calling_summary, target = "early_stopping/out/Variant_Calling_Performance_Summary.docx")
+```
+
+## number of cluster per sample in both conditions
+
+### latest clustering early stopping
+
+```{r}
+cluster_stats_latest_early <- 
+  cluster_stats_parsed %>%
+  group_by(sample) %>%
+  arrange(timestamp) %>%
+  slice_tail(n = 1) %>%
+  ungroup() %>%
+  select(sample, n_cluster, runtime_hours)
+
+cluster_stats_latest_early_summary <- 
+  cluster_stats_latest_early %>%
+  summarise(
+    mean_clusters_early = mean(n_cluster),
+    median_clusters_early = median(n_cluster),
+    sd_clusters_early = sd(n_cluster),
+    total_clusters_early = sum(n_cluster)
+  )
+```
+
+### compare to full run
+
+```{r}
+# manually set runtime hours to 29h (first run 19h for cluster monitoring and second run 10h for live clustering)
+cluster_stats_full_parsed <- 
+  cluster_stats_full %>%
+  select(
+    barcode = sample, 
+    n_cluster_full= n_cluster
+  ) %>%
+  mutate(
+    runtime_hours_full = 19.3
+  ) %>% 
+  inner_join(sample_sheet)
+
+# full cluster summary
+cluster_stats_full_summary <- 
+  cluster_stats_full_parsed %>%
+  summarise(
+    mean_clusters_full = mean(n_cluster_full),
+    median_clusters_full = median(n_cluster_full),
+    sd_clusters_full = sd(n_cluster_full),
+    total_clusters_full = sum(n_cluster_full)
+  )
+
+cluster_stats_comparison <-
+cluster_stats_latest_early %>%
+  left_join(cluster_stats_full_parsed, by = "sample") %>%
+  mutate(
+    n_cluster_full = ifelse(is.na(n_cluster_full), 0, n_cluster_full), 
+    relative_cluster_number = n_cluster / n_cluster_full,
+    relative_cluster_number_percent = round(relative_cluster_number * 100, 0),
+    relative_runtime_hours = runtime_hours / runtime_hours_full,
+    relative_runtime_hours_percent = round(relative_runtime_hours * 100, 0)
+  )
+```
+
+#### write table
+
+```{r}
+ft_cluster_stats_comparison <- 
+  cluster_stats_comparison %>% 
+  select(sample, runtime_hours_full, n_cluster_full, runtime_hours, n_cluster, relative_cluster_number_percent, relative_runtime_hours_percent) %>% 
+  mutate(
+    runtime_hours = round(runtime_hours, 2),
+  ) %>% 
+  rename(
+    Sample = sample,
+    `Clusters (Early Stopping)` = n_cluster,
+    `Clusters (Full Run)` = n_cluster_full,
+    `Relative Clusters (%)` = relative_cluster_number_percent,
+    `Runtime (Early Stopping, hours)` = runtime_hours,
+    `Runtime (Full Run, hours)` = runtime_hours_full,
+    `Relative Runtime (%)` = relative_runtime_hours_percent
+  ) %>%
+  flextable() %>%
+  align(align = "center", part = "all") %>%
+  bold(part = "header") %>%
+  fontsize(size = 11, part = "all") %>%
+  padding(padding = 5, part = "all") %>% 
+  theme_zebra() %>%
+  border_remove() %>%
+  border_outer(part = "all", border = fp_border(color = "black", width = 1)) %>%  
+  border_inner_v(border = fp_border(color = "grey60", width = 0.5))%>%
+  border_inner_h(border = fp_border(color = "grey60", width = 0.5))
+
+# Export to Word
+doc_cluster_stats_comparison <- read_docx() %>%
+  body_add_par("Cluster Statistics Comparison between Early Stopping and Full Run", style = "heading 1") %>%
+  body_add_flextable(ft_cluster_stats_comparison) %>%
+  body_add_par("", style = "Normal")  # optional spacer
+
+print(doc_cluster_stats_comparison, target = "early_stopping/out/Cluster_Stats_Comparison.docx")
+```
+
+# plots
+
+## variant level correlation
+
+Take the faceted figure with correlations explaining the sample with less cluster has more residual noise
+
+```{r}
+p.variant_level_plot <-
+  variant_calling_comparison %>%
+  ggplot(aes(x = variant_level_full, y = variant_level_early)) +
+  facet_wrap(~sample, ncol = 2) +extracted_umis_stats
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey80") +
+  geom_text(
+    data = variant_calling_correlation,
+    aes(
+      x = 0.1, 
+      y = 0.98, 
+      # paste R-saquared value with 4 decimal places
+      label = paste0("R^2 == ", round(r_squared, 3))
+    ),
+    parse = TRUE,
+    size = 5
+  ) +
+  # add number of variants per condition
+  geom_text(
+    data = variant_calling_variant_counts,
+    aes(
+      x = 0.17, 
+      y = 0.85, 
+      label = paste0("Variants = ", n_variants_early, " [n]")
+    ),
+    size = 5
+  ) +
+  # make percentage scale
+  scale_x_continuous(labels = scales::percent, breaks = seq(0, 1, 0.2)) +
+  scale_y_continuous(labels = scales::percent, breaks = seq(0, 1, 0.2)) +
+  labs(
+    # title = "Variant Level Correlation between Early Stopping and Full Run",
+    x = "Variant Level (Full Run)",
+    y = "Variant Level (Early Stopping)"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 18),
+  )
+
+p.variant_level_plot
+
+ggsave( 
+  plot = p.variant_level_plot, 
+  filename = "variant_level_plot.jpg", 
+  path = "early_stopping/out", 
+  width = 12, 
+  height = 10, 
+  dpi = 300
+)
+```
+
+## accumulates reads, extracted umis and cluster over time
+
+```{r}
+p.accumulated_reads <-
+  filtered_read_stats_accumulated %>%
+  filter(filter_step == "reads_found") %>% 
+  ggplot(aes(x = runtime_hours, y = accumulated_reads, color = sample)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(
+    # title = "Accumulated Reads over Time",
+    x = "Runtime (hours)",
+    y = "Reads [n]",
+    color = "Sample"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 16),
+    legend.position = "bottom"
+  )
+
+p.accumulated_reads
+
+ggsave( 
+  plot = p.accumulated_reads, 
+  filename = "accumulated_reads_over_time.jpg", 
+  path = "early_stopping/out", 
+  width = 12, 
+  height = 9, 
+  dpi = 300
+)
+```
+
+## accumulated extracted umis
+
+```{r}
+p.accumulated_umis <-
+  extracted_umis_stats_accumulated %>%
+  filter(umi_metric == "included_reads") %>% 
+  ggplot(aes(x = runtime_hours, y = accumulated_counts, color = sample)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    # title = "Accumulated Extracted UMIs over Time",
+    x = "Runtime (hours)",
+    y = "Extracted UMIs [n]",
+    color = "Sample"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 16),
+    legend.position = "bottom"
+  )
+
+p.accumulated_umis
+
+ggsave( 
+  plot = p.accumulated_umis, 
+  filename = "accumulated_extracted_umis_over_time.jpg", 
+  path = "early_stopping/out", 
+  width = 12, 
+  height = 9, 
+  dpi = 300
+)
+```
+
+## accumulated clusters
+
+```{r}
+p.accumulated_clusters <-
+  cluster_stats_parsed %>%
+  ggplot(aes(x = runtime_hours, y = n_cluster, color = sample)) +
+  geom_line(alpha = 0.3) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(se = FALSE) +
+  labs(
+    # title = "Accumulated Clusters over Time",
+    x = "Runtime (hours)",
+    y = "Clusters [n]",
+    color = "Sample"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 20), 
+    legend.position = "bottom"
+  )
+
+p.accumulated_clusters
+
+ggsave( 
+  plot = p.accumulated_clusters, 
+  filename = "accumulated_clusters_over_time.jpg", 
+  path = "early_stopping/out", 
+  width = 12, 
+  height = 9, 
+  dpi = 300
+)
+```
+
+### combined plot
+
+```{r}
+design <- "A\nB\nC"
+
+pw.combined_accumulated <- 
+  wrap_plots(
+    A = p.accumulated_reads,
+    B = p.accumulated_umis,
+    C = p.accumulated_clusters,
+    design = design
+  ) +
+  plot_layout(
+    axis_titles = "collect", 
+    guides = "collect"
+  ) + 
+  plot_annotation(tag_levels = "A")
+
+pw.combined_accumulated
+
+ggsave( 
+  plot = pw.combined_accumulated, 
+  filename = "combined_accumulated_plots_over_time.jpg", 
+  path = "early_stopping/out", 
+  width = 12, 
+  height = 18, 
+  dpi = 300
+)
+```
+
+### combined plot without umi
+
+```{r}
+design_wo_umi <- "A\nB"
+
+pw.combined_accumulated_wo_umi <- 
+  wrap_plots(
+    A = p.accumulated_reads,
+    B = p.accumulated_clusters,
+    design = design_wo_umi
+  ) +
+  plot_layout(
+    axis_titles = "collect", 
+    guides = "collect", 
+  ) + 
+  plot_annotation(tag_levels = "A")
+
+pw.combined_accumulated_wo_umi
+
+ggsave( 
+  plot = pw.combined_accumulated_wo_umi, 
+  filename = "combined_accumulated_plots_over_time_wo_umi.jpg", 
+  path = "early_stopping/out", 
+  width = 12, 
+  height = 18, 
+  dpi = 300
+)
+```

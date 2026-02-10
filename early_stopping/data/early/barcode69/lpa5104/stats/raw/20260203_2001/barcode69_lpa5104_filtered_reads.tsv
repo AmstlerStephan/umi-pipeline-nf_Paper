@@ -1,0 +1,10 @@
+sample	target	metric	count	percent
+barcode69	lpa5104	reads_found	61127	100.00
+barcode69	lpa5104	reads_unmapped	0	0.00
+barcode69	lpa5104	reads_secondary	0	0.00
+barcode69	lpa5104	reads_supplementary	4048	6.62
+barcode69	lpa5104	reads_on_target	57079	93.38
+barcode69	lpa5104	reads_concatamer	3793	6.21
+barcode69	lpa5104	reads_short	7575	12.39
+barcode69	lpa5104	reads_long	10	0.02
+barcode69	lpa5104	reads_filtered	45701	74.76
