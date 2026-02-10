@@ -10,13 +10,15 @@ This repository contains all scripts, configuration files, and benchmarking reso
 ## 📁 Repository Structure
 
 ```
-pipelines/
-├── umi-pipeline-nf/
-│   └── benchmarking/           # Scripts, configs, and commands for HG00653 sample analysis
-├── karst/                      # Scripts for benchmarking against longread_umi using Zymo data
-├── consequmi/                  # Scripts for benchmarking against ConSeqUMI using SARS-CoV-2 data
-├── pipeline-umi-amplicon/      # Scripts for benchmarking against pipeline-umi-amplicon using HG00653
-└── scalability/                # Scripts and data for scalability of umi-pipeline-nf across increasing sample sizes
+├── ConSeqUmi
+├── Karst
+├── benchmarking
+├── early_stopping
+├── live
+├── main_figure
+├── pipeline-umi-amplicon
+├── scalability
+├── src
 ```
 
 ---
@@ -28,8 +30,8 @@ pipelines/
 - **Basecalling:** `dorado` with model `400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0`
 - **Pipeline:** `umi-pipeline-nf` in both POA- and reference-based configurations (GPU-mode)
 - **Scripts Location:**  
-  [`pipelines/umi-pipeline-nf/benchmarking`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipelines/umi-pipeline-nf/benchmarking)
-- The same sample was used for benchmarking against pipeline-umi-amplicon: [`pipelines/pipeline-umi-amplicon`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipelines/pipeline-umi-amplicon)
+  [`pipelines/umi-pipeline-nf/benchmarking`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/benchmarking)
+- The same sample was used for benchmarking against pipeline-umi-amplicon: [`pipelines/pipeline-umi-amplicon`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipeline-umi-amplicon)
 
 ---
 
@@ -40,7 +42,29 @@ pipelines/
 - **Basecalling:** `dorado` with model `400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0`
 - **Pipeline:** `umi-pipeline-nf` in both POA- and reference-based configurations (GPU-mode)
 - **Scripts Location:**  
-  [`pipelines/umi-pipeline-nf/scalability`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipelines/umi-pipeline-nf/scalability)
+  [`pipelines/umi-pipeline-nf/scalability`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/scalability)
+
+---
+
+## 🧬 Live UMI Cluster Monitoring Experiment
+
+**Samples:** 8 samples selected from the scalability experiment
+**Raw reads:** The raw reads are available in the ENA database under accession [PRJEB73509](https://www.ebi.ac.uk/ena/browser/view/PRJEB73509).
+**Basecalling:** dorado with model 400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0
+**Pipeline:** umi-pipeline-nf in real-time monitoring mode
+**Scripts Location:**
+[live](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/live)
+
+---
+
+## 🧬 Early Stopping Experiment
+
+- **Samples:** 8 samples selected from the scalability experiment
+- **Raw reads:** The raw reads are available in the ENA database under accession [PRJEB73509](https://www.ebi.ac.uk/ena/browser/view/PRJEB73509). 
+- **Basecalling:** dorado with model 400_dna_r10.4.1_e8.2_400bps_sup@v4.3.0
+- **Pipeline:** umi-pipeline-nf with early stopping criteria applied
+- **Scripts Location:**
+  [early_stopping](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/early_stopping)
 
 ---
 
@@ -52,7 +76,7 @@ pipelines/
 - **Preprocessing:** FASTQ splitting using `seqkit v2.10.0`
 - **Pipeline:** `umi-pipeline-nf` in POA-based and reference-based GPU-mode
 - **Scripts Location:**  
-  [`pipelines/karst`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipelines/karst)
+  [`pipelines/karst`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/Karst)
 
 ---
 
@@ -64,9 +88,13 @@ pipelines/
 - **Consensus Analysis:** `Nextclade docker v3.15.3`
 - **Comparison Data:** Extracted from ConSeqUMI preprint
 - **Scripts Location:**  
-  [`pipelines/consequmi`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/pipelines/consequmi)
+  [`pipelines/consequmi`](https://github.com/AmstlerStephan/umi-pipeline-nf_Paper/tree/main/ConSeqUmi)
 
 ---
+
+## Src
+
+- Contains all scripts to reproduce the figures and tables from the manuscript
 
 ## 📊 Post-processing & Plotting
 
