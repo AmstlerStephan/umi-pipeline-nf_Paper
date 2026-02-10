@@ -1,0 +1,5 @@
+sample	target	metric	count	percent
+barcode68	lpa5104	detected_forward_strands	26817	48.35
+barcode68	lpa5104	detected_reverse_strands	28644	51.65
+barcode68	lpa5104	total_reads	55461	100.00
+barcode68	lpa5104	included_reads	51409	92.69

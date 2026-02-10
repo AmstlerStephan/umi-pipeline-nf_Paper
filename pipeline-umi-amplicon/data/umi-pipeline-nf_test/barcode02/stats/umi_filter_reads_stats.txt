@@ -1,0 +1,7 @@
+Reads found: 265805
+Reads unmapped: 4937 (1%)
+lpa5104
+Reads found: 193764
+On target: 239832 (90%)
+19735 concatamers - 8%
+26333 short - 10%

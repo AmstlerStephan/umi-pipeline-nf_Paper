@@ -1,0 +1,455 @@
+---
+title: "main_figure_new"
+format: html
+editor: visual
+---
+# Libraries
+
+```{r}
+library(tidyverse)
+library(patchwork)
+library(jpeg)
+library(grid)
+```
+
+# Paths
+
+```{r}
+zymo_comparison_path <- "main_figure/data/stacked_barplot_comparison_theoretical.tsv"
+umi_pipeline_nf_metropmap_path <- "main_figure/data/metro-map_umi-pipeline-nf.jpg"
+scalability_runtime_path <- "main_figure/data/scalability_plot.tsv"
+scatter_variant_level_data_path <- "main_figure/data/scatter_variant_level_data.tsv"
+early_stopping_cluster_stats_parsed_path <- "main_figure/data/early_stopping_cluster_stats_parsed.tsv"
+early_stopping_variant_calling_comparison_path <- "main_figure/data/early_stopping_variant_calling_comparison.tsv"
+full_run_cluster_stats_parsed_path <- "main_figure/data/full_run_cluster_stats_parsed.tsv"
+```
+
+# Read data
+
+```{r, message=FALSE}
+zymo_comparison <- read_tsv(zymo_comparison_path)
+# umi_pipeline_nf_metropmap <- readJPEG(umi_pipeline_nf_metropmap_path)
+scalability_runtime <- read_tsv(scalability_runtime_path) 
+scatter_variant_level_data <- read_tsv(scatter_variant_level_data_path)
+early_stopping_cluster_stats_parsed <- read_tsv(early_stopping_cluster_stats_parsed_path) %>% 
+  mutate(mode = "early")
+early_stopping_variant_calling_comparison <- read_tsv(early_stopping_variant_calling_comparison_path)
+full_run_cluster_stats_parsed <- read_tsv(full_run_cluster_stats_parsed_path) %>% 
+  mutate(mode = "full")
+```
+# Global sizing and theme
+
+```{r}
+text_size <- 16
+annotation_size <- 5
+```
+
+## plot
+```{r}
+samples <- unique(full_run_cluster_stats_parsed$sample)
+# "HG01593" "HG02657" "HG02778" "NA19098" "NA19190" "HG03765" "HG03234" "NA18868"
+clustering_colors <- 
+  c(
+    "HG01593" = "#1b9e77",
+    "HG02657" = "#d95f02",
+    "HG02778" = "#7570b3",
+    "NA19098" = "#e7298a",
+    "NA19190" = "#66a61e",
+    "HG03765" = "#e6ab02",
+    "HG03234" = "#a6761d",
+    "NA18868" = "#666666"
+  )
+
+p.cluster_stats_parsed <-
+  full_run_cluster_stats_parsed %>%
+  ggplot(aes(
+    x = runtime_hours,
+    y = n_cluster,
+    color = sample,
+  )) +
+  geom_smooth(se = FALSE) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_color_manual(values = clustering_colors) +
+  labs(
+    # title = "Number of clusters per sample over time",
+    x = "Runtime [h]",
+    y = "UMI-Clusters [n]",
+    color = "Sample"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "left",
+    text = element_text(size = text_size)
+  )
+
+p.cluster_stats_parsed
+```
+# variant calling comparison early stopping
+```{r}
+variant_calling_correlation <- 0.999
+n_variants <- nrow(early_stopping_variant_calling_comparison)
+
+p.variant_calling_early_stopping <-
+  early_stopping_variant_calling_comparison %>%
+  ggplot(aes(x = variant_level_full, y = variant_level_early)) +
+  geom_point(size = 0.8) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey80") +
+  geom_text(
+    aes(
+      x = 0.13,
+      y = 0.98,
+      # paste R-saquared value with 4 decimal places
+      label = paste0("R^2 == ", variant_calling_correlation)
+    ),
+    parse = TRUE,
+    size = annotation_size
+  ) +
+  # add number of variants per condition
+  geom_text(
+    aes(
+      x = 0.24,
+      y = 0.85,
+      label = paste0("Variants = ", n_variants, " [n]")
+    ),
+    size = annotation_size
+  ) +
+  # make percentage scale
+  scale_x_continuous(labels = scales::percent, breaks = seq(0, 1, 0.2)) +
+  scale_y_continuous(labels = scales::percent, breaks = seq(0, 1, 0.2)) +
+  labs(
+    # title = "Variant Level Correlation between Early Stopping and Full Run",
+    x = "Variant Level (Full Run)",
+    y = "Variant Level\n(Early Stopping)"
+  ) +
+  theme_bw() +
+  theme(
+    text = element_text(size = text_size)
+  )
+
+p.variant_calling_early_stopping
+```
+
+# Scalability
+## both faceted
+```{r}
+colors <- 
+  c(
+    "CPU" = "#E64B35",
+    "GPU" = "#4DBBD5"
+  )
+
+p.scalability_runtime <- 
+  scalability_runtime %>%
+  mutate(
+    total_runtime_hours = total_runtime_sec / 3600,
+  ) %>% 
+  ggplot(aes(
+    x = sample_num,
+    y = total_runtime_hours,
+    color = mode,
+    shape = type
+  )) +
+  facet_wrap(~ polishing, nrow = 1, scales = "free_y") +
+  geom_point(size = 2) +
+  geom_line(aes(linetype = type)) +
+  scale_y_continuous(breaks = scales::breaks_pretty(n = 8)) +
+  # scale_x_continuous(breaks = seq(0, 100, 20)) +
+  scale_x_continuous(breaks = scales::breaks_pretty(n = 6)) +
+  labs(
+    x = "Samples [n]",
+    y = "Total Runtime [h]",
+    color = "Mode",
+    shape = "Data type",
+    linetype = "Data type"
+  ) +
+  scale_color_manual(values = colors) +
+  theme_bw() +
+  theme(
+    legend.position = "left",
+    text = element_text(size = text_size), 
+    # increase facet label size 
+    strip.text = element_text(size = text_size)
+  )
+
+p.scalability_runtime
+```
+## POA-based
+
+```{r}
+colors <- 
+  c(
+    "CPU" = "#E64B35",
+    "GPU" = "#4DBBD5"
+  )
+
+p.scalability_runtime_poa <- 
+  scalability_runtime %>%
+  filter(polishing == "POA-based") %>%
+  mutate(
+    total_runtime_hours = total_runtime_sec / 3600,
+  ) %>% 
+  ggplot(aes(
+    x = sample_num,
+    y = total_runtime_hours,
+    color = mode,
+    shape = type
+  )) +
+  geom_point(size = 2) +
+  geom_line(aes(linetype = type)) +
+  scale_y_continuous(breaks = scales::breaks_pretty(n = 8)) +
+  # scale_x_continuous(breaks = seq(0, 100, 20)) +
+  scale_x_continuous(breaks = scales::breaks_pretty(n = 6)) +
+  labs(
+    x = "Samples [n]",
+    y = "Total Runtime [h]",
+    color = "Mode",
+    shape = "Data type",
+    linetype = "Data type"
+  ) +
+  scale_color_manual(values = colors) +
+  theme_bw() +
+  theme(
+    legend.position = "left",
+    text = element_text(size = text_size), 
+    # increase facet label size 
+    strip.text = element_text(size = text_size)
+  )
+```
+
+## Reference-based
+
+```{r}
+colors <- 
+  c(
+    "CPU" = "#E64B35",
+    "GPU" = "#4DBBD5"
+  )
+
+p.scalability_runtime_reference <- 
+  scalability_runtime %>%
+  filter(polishing == "Reference-based") %>%
+  mutate(
+    total_runtime_hours = total_runtime_sec / 3600,
+  ) %>% 
+  ggplot(aes(
+    x = sample_num,
+    y = total_runtime_hours,
+    color = mode,
+    shape = type
+  )) +
+  geom_point(size = 2, show.legend = FALSE) +
+  geom_line(aes(linetype = type), show.legend = FALSE) +
+  scale_y_continuous(breaks = scales::breaks_pretty(n = 8)) +
+  # scale_x_continuous(breaks = seq(0, 100, 20)) +
+  scale_x_continuous(breaks = scales::breaks_pretty(n = 6)) +
+  labs(
+    x = "Samples [n]",
+    y = "Total Runtime [h]",
+    color = "Mode",
+    shape = "Data type",
+    linetype = "Data type"
+  ) +
+  scale_color_manual(values = colors) +
+  theme_bw() +
+  theme(
+    legend.position = "left",
+    text = element_text(size = text_size), 
+    # increase facet label size 
+    strip.text = element_text(size = text_size)
+  )
+
+p.scalability_runtime_reference
+```
+
+# Zymo comparison
+
+```{r}
+plot_naming <- 
+  c(
+    "umi-pipeline-nf_POA-based" = "umi-pipeline-nf\n(POA-based)", 
+    "umi-pipeline-nf_Reference-based" = "umi-pipeline-nf\n(Reference-based)", 
+    "ONT_10.3_UMI" = "longread_umi\n(Karst et al.)",
+    "Theoretical" = "Theoretical\n(Zymo Research)"
+  )
+
+plot_order <- 
+  c(
+    "umi-pipeline-nf_Reference-based",
+    "umi-pipeline-nf_POA-based", 
+    "ONT_10.3_UMI",
+    "Theoretical"
+  )
+# similar colors as in cluster monitoring experiment
+plot_colors <- 
+  c(
+    "Staphylococcus" = "#1b9e77",
+    "Lactobacillus" = "#d95f02",
+    "Bacillus" = "#7570b3",
+    "Listeria" = "#e7298a",
+    "Escherichia" = "#66a61e",
+    "Pseudomonas" = "#e6ab02",
+    "Salmonella" = "#a6761d",
+    "Enterococcus" = "#666666",
+    "other" = "#999999"
+  )
+  
+# genus order 
+genus_order <- 
+  c(
+    "Staphylococcus",
+    "Lactobacillus",
+    "Bacillus",
+    "Listeria",
+    "Escherichia",
+    "Pseudomonas",
+    "Salmonella",
+    "Enterococcus",
+    "other"
+  )
+
+p.stacked_barplot_theoretical <-
+  zymo_comparison %>%
+  mutate(
+    Pipeline = factor(Pipeline, levels = plot_order), 
+    Genus = factor(Genus, levels = genus_order),
+  ) %>%
+  ggplot(aes(x = Pipeline, y = Abundance, fill = Genus)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  scale_fill_manual(values = plot_colors) +
+  scale_x_discrete(labels = plot_naming) +
+  scale_y_continuous(expand = c(0,0), limits = c(0, 102), breaks = seq(0, 100, 20)) +
+  labs(
+    x = "", 
+    y = "Relative\nAbundance [%]"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "left"
+  )
+
+p.stacked_barplot_theoretical
+```
+
+
+
+# Combine plots scalability, cluster monitoring, variant calling comparison 
+```{r}
+design_figure_main <- "AA\nBC\nDD"
+
+pw.main_figure <- 
+  wrap_plots( 
+    A = free(p.scalability_runtime),
+    B = free(p.cluster_stats_parsed),
+    C = free(p.variant_calling_early_stopping),
+    D = free(p.stacked_barplot_theoretical),
+    design = design_figure_main,
+    widths = c(7, 6),
+    heights = c(4, 4, 4)
+  ) + 
+  plot_annotation(tag_levels = "A") &
+  theme(
+    text = element_text(size = text_size),
+    axis.text = element_text(size = text_size, colour = "black")
+    # legend.position = "bottom",
+    # plot.tag = element_text(size =, face = "bold")
+  )
+
+pw.main_figure
+
+ggsave(
+  filename = "main_figure/out/main_figure.jpg",
+  plot = pw.main_figure,
+  dpi = 600,
+  width = 12,
+  height = 12
+)
+
+```
+
+
+
+# Combine plots scalability, cluster monitoring, variant calling comparison 
+```{r}
+design_figure_main_2 <- "AB\nCD\nEE"
+
+pw.main_figure_2 <- 
+  wrap_plots( 
+    A = free(p.scalability_runtime_poa),
+    B = free(p.scalability_runtime_reference),
+    C = free(p.cluster_stats_parsed),
+    D = free(p.variant_calling_early_stopping),
+    E = free(p.stacked_barplot_theoretical),
+    design = design_figure_main_2
+    # widths = c(6, 6)
+    # heights = c(4, 4, 4)
+  ) + 
+  plot_annotation(tag_levels = "A") &
+  theme(
+    text = element_text(size = text_size),
+    axis.text = element_text(size = text_size, colour = "black")
+    # legend.position = "bottom",
+    # plot.tag = element_text(size =, face = "bold")
+  )
+
+pw.main_figure_2
+
+ggsave(
+  filename = "main_figure/out/main_figure_2.jpg",
+  plot = pw.main_figure_2,
+  dpi = 600,
+  width = 12,
+  height = 12
+)
+```
+
+
+# Combine plots scalability, cluster monitoring, variant calling comparison with shared axes for scalability
+```{r}
+# Sub-assembly for A and B with shared axes (and a single set of axis titles)
+top_AB <- 
+  wrap_plots(
+    A = p.scalability_runtime_poa,
+    B = p.scalability_runtime_reference, 
+    design = "AB"
+  ) + 
+  plot_layout(
+    axes = "collect", 
+    axis_titles = "collect"
+  )
+
+# Use the sub-assembly as a single block in the main design
+design_figure_main_3 <- "AA\nCD\nEE"
+
+pw.main_figure_3 <- 
+  wrap_plots( 
+    A = top_AB,
+    C = free(p.cluster_stats_parsed),
+    # C = p.cluster_stats_parsed,
+    D = free(p.variant_calling_early_stopping),
+    # D = p.variant_calling_early_stopping,
+    E = free(p.stacked_barplot_theoretical),
+    # E = p.stacked_barplot_theoretical,
+    design = design_figure_main_3, 
+    widths = c(6, 8),
+    heights = c(4, 4, 4)
+  ) + 
+  plot_annotation(tag_levels = "A") &
+  theme(
+    text = element_text(size = text_size),
+    axis.text = element_text(size = text_size, colour = "black")
+  )
+
+pw.main_figure_3
+
+ggsave(
+  filename = "main_figure/out/main_figure_3.jpg",
+  plot = pw.main_figure_3,
+  dpi = 600,
+  width = 12,
+  height = 12
+)
+```
+
+

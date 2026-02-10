@@ -5,6 +5,7 @@ editor: visual
 ---
 
 # library
+
 ```{r}
 library(tidyverse)
 library(ggvenn)
@@ -12,20 +13,24 @@ library(UpSetR)
 library(ComplexUpset)
 library(patchwork)
 ```
+
 # functions
+
 ```{r}
 
 ```
 
 # paths
+
 ```{r}
-mutserve_umi_pipeline_nf_poa_gpu_path <- "../benchmarking/out/mutserve/poa/gpu/poa_based_polishing_context_50_50/consensus_parsed.txt"
-mutserve_umi_pipeline_nf_reference_gpu_path <- "../benchmarking/out/mutserve/reference_based/cpu/reference_based_polishing_context_50_50/consensus_parsed.txt"
-mutserve_pipeline_umi_amplicon_path <- "../pipeline-umi-amplicon/data/umi-pipeline-nf_test/mutserve/barcode02/consensus/barcode02_mutserve_parsed.txt"
-VNTR_pipeline_path <- "../VNTR/data/20240221_wgs_no_signature_approach_1000G_HG00653.tsv"
+mutserve_umi_pipeline_nf_poa_gpu_path <- "pipeline-umi-amplicon/data/poa/gpu/mutserve/consensus_parsed.txt"
+mutserve_umi_pipeline_nf_reference_gpu_path <- "pipeline-umi-amplicon/data/reference_based/cpu/mutserve/consensus_parsed.txt"
+mutserve_pipeline_umi_amplicon_path <- "pipeline-umi-amplicon/data/umi-pipeline-nf_test/mutserve/barcode02/consensus/barcode02_mutserve_parsed.txt"
+VNTR_pipeline_path <- "data/VNTR/20240221_wgs_no_signature_approach_1000G_HG00653.tsv"
 ```
 
 # load files
+
 ```{r}
 mutserve_umi_pipeline_nf_poa_gpu <- read_delim(mutserve_umi_pipeline_nf_poa_gpu_path) %>% 
   mutate(
@@ -51,8 +56,11 @@ VNTR_pipeline <- read_delim(VNTR_pipeline_path) %>%
     method = "jlr_no_signature"
   )
 ```
+
 # Tables
+
 ## parse VNTR
+
 ```{r}
 VNTR_pipeline_parsed <-
   VNTR_pipeline %>% 
@@ -75,6 +83,7 @@ VNTR_pipeline_parsed <-
 ```
 
 ## merge tables
+
 ```{r}
 mutserve <- 
   mutserve_umi_pipeline_nf_poa_gpu %>% 
@@ -84,6 +93,7 @@ mutserve <-
 ```
 
 ## compare variants
+
 ```{r}
 # create variant identifier
 mutserve_comp <- mutserve %>%
@@ -104,8 +114,10 @@ mutserve_wide <- mutserve %>%
 
 ```
 
-# Plots 
+# Plots
+
 # venn
+
 ```{r}
 
 mutserve_list <- mutserve_comp %>%
@@ -121,13 +133,15 @@ p.venn_variants
 
 ggsave(
   plot = p.venn_variants,
-  filename = "../pipeline-umi-amplicon/out/venn_variants.jpeg", 
+  filename = "pipeline-umi-amplicon/out/venn_variants.jpeg", 
   dpi = 600,
   width = 12, 
   height = 9
 )
 ```
+
 ## Venn alternative
+
 ```{r}
 
 mutserve_list <- mutserve %>%
@@ -136,7 +150,7 @@ mutserve_list <- mutserve %>%
   summarise(variants = list(unique(variant_id))) %>%
   deframe()
 
-jpeg("../pipeline-umi-amplicon/out/UpSetplot.jpeg", width = 12, height = 9, units = "in", res = 600)
+jpeg("pipeline-umi-amplicon/out/UpSetplot.jpeg", width = 12, height = 9, units = "in", res = 600)
 UpSetR::upset(
   fromList(mutserve_list), 
   nsets = 4, 
@@ -146,7 +160,9 @@ UpSetR::upset(
 )
 dev.off()
 ```
+
 ## Complex Upset
+
 ```{r}
 mutserve_binary <- mutserve_wide %>%
   select(
@@ -208,7 +224,7 @@ p.UpSetplot
 
 ggsave(
   plot = p.UpSetplot,
-  filename = "../pipeline-umi-amplicon/out/UpSetplot_ggplot.jpeg", 
+  filename = "pipeline-umi-amplicon/out/UpSetplot_ggplot.jpeg", 
   dpi = 600,
   width = 9, 
   height = 10
@@ -217,13 +233,16 @@ ggsave(
 ```
 
 # variant level scatter
+
 ```{r}
 mutserve %>% 
   ggplot(aes(Position, `Variant-level`, color = method)) +
   geom_point() 
 
 ```
-# variant levels correlation 
+
+# variant levels correlation
+
 ```{r}
 make_scatter <- function(data, x, y) {
   # Fit model
@@ -306,7 +325,7 @@ pw.scatter_variant_level <-
 
 ggsave(
   plot = pw.scatter_variant_level,
-  filename = "../pipeline-umi-amplicon/out/scatter_variant_level.jpeg", 
+  filename = "pipeline-umi-amplicon/out/scatter_variant_level.jpeg", 
   dpi = 600,
   width = 210, 
   height = 260, 
@@ -314,3 +333,9 @@ ggsave(
 )
 ```
 
+### save plot data for main figure
+
+```{r}
+mutserve_wide %>% 
+  write_tsv("main_figure/scatter_variant_level_data.tsv")
+```

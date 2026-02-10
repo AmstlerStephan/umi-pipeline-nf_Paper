@@ -1,0 +1,18 @@
+ID	Filter	Pos	Ref	Variant	VariantLevel	MajorBase	MajorLevel	MinorBase	MinorLevel	Coverage	CoverageFWD	CoverageREV	Type
+masked_consensus.bam	PASS	35	C	G	0.59	G		-		913	913	0	1
+masked_consensus.bam	PASS	859	A	G	0.501	G		-		913	913	0	1
+masked_consensus.bam	PASS	1356	T	C	0.59	C		-		913	913	0	1
+masked_consensus.bam	PASS	1942	A	T	1.00	T		-		913	913	0	1
+masked_consensus.bam	PASS	2409	A	T	0.729	T		-		913	913	0	1
+masked_consensus.bam	PASS	2449	T	C	1.00	C		-		913	913	0	1
+masked_consensus.bam	PASS	2687	A	G	0.875	G		-		913	913	0	1
+masked_consensus.bam	PASS	2688	T	G	0.875	G		-		913	913	0	1
+masked_consensus.bam	PASS	2705	A	G	0.875	G		-		913	913	0	1
+masked_consensus.bam	PASS	3061	G	A	0.83	A		-		913	913	0	1
+masked_consensus.bam	PASS	3103	G	C	0.59	C		-		913	913	0	1
+masked_consensus.bam	PASS	3336	A	G	0.537	G		-		913	913	0	1
+masked_consensus.bam	PASS	4071	A	C	0.59	C		-		913	913	0	1
+masked_consensus.bam	PASS	4072	C	A	0.59	A		-		913	913	0	1
+masked_consensus.bam	PASS	4265	C	T	0.771	T		-		913	913	0	1
+masked_consensus.bam	PASS	4358	A	G	0.59	G		-		913	913	0	1
+masked_consensus.bam	PASS	4576	C	G	0.921	G		-		913	913	0	1

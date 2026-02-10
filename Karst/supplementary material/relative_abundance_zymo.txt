@@ -1,0 +1,9 @@
+Species	PacBio_UMI	PacBio_CCS	ONT_10.3_UMI	ONT_meta	Theoretical
+Bacillus	16.87	12.61	14.44	11.9	17.4
+Enterococcus	4.95	3.55	4.31	4.6	9.9
+Escherichia	12.01	10.51	12.41	19.6	10.1
+Lactobacillus	14.63	14.89	15.18	12.1	18.4
+Listeria	12.14	12.68	12.02	12.5	14.1
+Pseudomonas	5.76	7.81	6.47	7.6	4.2
+Salmonella	5.67	5.6	6.05	7.3	10.4
+Staphylococcus	27.96	32.35	29.12	24.4	15.5
