@@ -96,6 +96,8 @@ This repository contains all scripts, configuration files, and benchmarking reso
 
 - Contains all scripts to reproduce the figures and tables from the manuscript
 
+---
+
 ## 📊 Post-processing & Plotting
 
 - **Software:**
